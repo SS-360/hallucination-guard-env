@@ -1,0 +1,54 @@
+name: hallucination-guard-env
+description: |
+  An OpenEnv RL environment that trains AI models to answer questions
+  ONLY from verified context documents — penalizing hallucination and
+  rewarding factual grounding.
+
+  Inspired by real experiences with AI hallucination during research,
+  this environment helps train more reliable and trustworthy AI systems.
+
+version: 0.1.0
+author: community
+license: MIT
+
+# OpenEnv configuration
+openenv:
+  # Environment type
+  env_type: custom
+
+  # Server configuration
+  server:
+    port: 8000
+    host: 0.0.0.0
+
+  # Environment parameters
+  parameters:
+    max_questions: 10
+
+  # Entry points
+  entry_points:
+    server: server.app:app
+    client: client:HallucinationClient
+
+# Dependencies
+dependencies:
+  - openenv-core>=0.2.0
+  - fastapi>=0.100.0
+  - uvicorn>=0.23.0
+  - requests>=2.31.0
+
+# Tags for discovery
+tags:
+  - hallucination-detection
+  - question-answering
+  - grounded-generation
+  - fact-checking
+  - rl-environment
+
+# Dataset info
+datasets:
+  - synthetic-hackathon-qa
+  - triviaqa
+  - squad
+  - halueval
+  - truthfulqa

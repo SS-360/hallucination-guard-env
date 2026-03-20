@@ -1,0 +1,26 @@
+# Core OpenEnv dependencies
+fastapi>=0.100.0
+uvicorn>=0.23.0
+requests>=2.31.0
+
+# ML / semantic similarity (makes hallucination detection real)
+sentence-transformers>=2.7.0   # all-MiniLM-L6-v2 embeddings + nli-deberta-v3-small NLI
+torch>=2.0.0                   # required by sentence-transformers
+numpy>=1.24.0
+
+# Real QA datasets from HuggingFace Hub
+datasets>=2.14.0               # SQuAD, TriviaQA, HaluEval, TruthfulQA
+
+# Model adapters (install as needed per provider)
+# openai>=1.0.0                # OpenAI GPT models
+# anthropic>=0.18.0            # Anthropic Claude models
+# transformers>=4.35.0         # HuggingFace local models
+
+# Data / serialization
+pydantic>=2.0.0
+aiofiles>=23.0.0
+python-json-logger>=2.0.0
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
