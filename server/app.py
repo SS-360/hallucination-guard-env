@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi import FastAPI, HTTPException, Header
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from typing import Dict, Any, Optional
 
 from models import HallucinationAction, HallucinationObservation, HallucinationState
@@ -192,6 +192,12 @@ async def log_requests(request, call_next):
     response = await call_next(request)
     logger.info(f"{request.method} {request.url.path} → {response.status_code}")
     return response
+
+
+
+@app.get("/")
+async def root():
+    return RedirectResponse(url="/docs")
 
 
 if __name__ == "__main__":
