@@ -109,11 +109,14 @@ class HallucinationEnvironment(Environment[HallucinationAction, HallucinationObs
         # Attempt to load real HuggingFace datasets (SQuAD, TriviaQA, HaluEval, TruthfulQA).
         # Uses disk cache after first download so restarts are instant.
         # Gracefully skips if the `datasets` package is not installed.
-        real_added = self.dataset_loader.load_real_datasets(max_per_dataset=500, cache=True)
-        if real_added > 0:
-            logger.info(f"Added {real_added} real examples — total: {self.dataset_loader.get_total_examples()}")
-        else:
-            logger.info("HuggingFace datasets unavailable; using synthetic data only")
+        try:
+            real_added = self.dataset_loader.load_real_datasets(max_per_dataset=500, cache=True)
+            if real_added > 0:
+                logger.info(f"Added {real_added} real examples — total: {self.dataset_loader.get_total_examples()}")
+            else:
+                logger.info("HuggingFace datasets unavailable; using synthetic data only")
+        except Exception as _ds_err:
+            logger.warning(f"Dataset loading failed ({_ds_err}); continuing with synthetic data only")
 
         # Episode state
         self.episode_id: Optional[str] = None

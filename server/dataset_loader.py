@@ -93,7 +93,7 @@ class DatasetLoader:
         self.examples: List[QAExample] = []
         self.used_indices: set = set()
         self.current_episode_examples: List[QAExample] = []
-        self.cache_dir = cache_dir or os.path.join(os.path.dirname(__file__), "cache")
+        self.cache_dir = cache_dir or os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache")
         self.statistics = DatasetStatistics()
 
         # Ensure cache directory exists
