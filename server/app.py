@@ -48,9 +48,9 @@ app = FastAPI(
 
 **The production-grade OpenEnv RL environment for training and evaluating LLMs on hallucination avoidance.**
 
-Built on 50,000+ examples across 13 real-world QA datasets:
-SQuAD · TriviaQA · HaluEval · TruthfulQA · Natural Questions · HotpotQA ·
-BoolQ · FaithDial · FEVER · ARC · OpenBookQA · MS MARCO · CoQA
+Built on 100,000+ examples across 15 real-world QA datasets:
+SQuAD · TriviaQA · HaluEval · TruthfulQA · HotpotQA · BoolQ · HH-RLHF ·
+NQ Open · CommonsenseQA · WinoGrande · CoQA · OpenBookQA · MS MARCO · ARC · Medical QA
 
 ### Quick Start
 
@@ -321,12 +321,13 @@ async def env_info():
         "version": "3.0.0",
         "description": "Production RL environment for hallucination detection & prevention",
         "datasets": {
-            "count": 13,
-            "total_examples": "50,000+",
+            "count": 15,
+            "total_examples": "100,000+",
             "sources": [
                 "squad", "trivia_qa", "halueval", "truthful_qa",
-                "natural_questions", "hotpotqa", "boolq", "faithdial",
-                "fever", "arc", "openbookqa", "ms_marco", "coqa",
+                "hotpotqa", "boolq", "faithdial", "fever", "arc",
+                "openbookqa", "ms_marco", "coqa", "nq_open",
+                "commonsense_qa", "winogrande",
             ],
         },
         "endpoints": {
