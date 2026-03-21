@@ -72,14 +72,12 @@ print(result["reward"], result["is_hallucination"])
 ### Python SDK
 
 ```python
-pip install openenv-halluguard
-from openenv_halluguard import HallucinationGuardEnv
+pip install hallucination-guard-sdk   # coming soon
+from hallucination_guard import HallucinationGuardEnv
 env = HallucinationGuardEnv()
-results = env.evaluate(your_model_fn, episodes=5)
-env.print_report(results)
+obs = env.reset()
+result = env.step(obs["question"], obs["context"], your_model)
 ```
-
-### HallucinationGuard - [Website](https://huggingface.co/spaces/SamSankar/hallucination-guard-env) · [PyPI](https://pypi.org/project/openenv-halluguard/) · [Docs](https://samsankar-hallucination-guard-env.hf.space/docs)
     """,
     version="3.0.0",
     contact={"name": "HallucinationGuard", "url": "https://huggingface.co/spaces/SamSankar/hallucination-guard-env"},
@@ -98,8 +96,28 @@ app.add_middleware(
 _sessions: Dict[str, HallucinationEnvironment] = {}
 _default_env: Optional[HallucinationEnvironment] = None
 
-# Leaderboard: { model_name: {score, hallucination_rate, episodes, submitted_at} }
-_leaderboard: Dict[str, Dict[str, Any]] = {}
+# Leaderboard — file-backed so it survives requests within the container lifetime
+import json as _json
+
+_LEADERBOARD_FILE = "/tmp/hallucination_guard_leaderboard.json"
+
+def _load_leaderboard() -> Dict[str, Any]:
+    if os.path.exists(_LEADERBOARD_FILE):
+        try:
+            with open(_LEADERBOARD_FILE) as f:
+                return _json.load(f)
+        except Exception:
+            pass
+    return {}
+
+def _save_leaderboard(lb: Dict[str, Any]) -> None:
+    try:
+        with open(_LEADERBOARD_FILE, "w") as f:
+            _json.dump(lb, f, indent=2)
+    except Exception as e:
+        logger.warning(f"Could not persist leaderboard: {e}")
+
+_leaderboard: Dict[str, Dict[str, Any]] = _load_leaderboard()
 
 
 def _get_default_env() -> HallucinationEnvironment:
@@ -296,6 +314,7 @@ async def submit_to_leaderboard(data: Dict[str, Any]):
         "submitted_at":      time.time(),
     }
     logger.info(f"Leaderboard submission: {model_name} reward={data['avg_reward']:.3f}")
+    _save_leaderboard(_leaderboard)
     return {"status": "submitted", "model_name": model_name,
             "message": f"'{model_name}' added to leaderboard. View at /leaderboard"}
 
@@ -306,6 +325,7 @@ async def remove_from_leaderboard(model_name: str):
     if model_name not in _leaderboard:
         raise HTTPException(status_code=404, detail=f"Model '{model_name}' not found")
     del _leaderboard[model_name]
+    _save_leaderboard(_leaderboard)
     return {"status": "removed", "model_name": model_name}
 
 

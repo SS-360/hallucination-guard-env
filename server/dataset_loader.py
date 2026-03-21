@@ -301,7 +301,7 @@ class DatasetLoader:
             out.append(QAExample(
                 question=q, context=ctx, answer=str(ans),
                 id=f"hotpotqa_{i}", source="hotpotqa",
-                difficulty=DifficultyLevel.ADVANCED, category="multi_hop_reasoning"))
+                difficulty=DifficultyLevel.EXPERT, category="multi_hop_reasoning"))
         return out
 
     def _load_boolq(self, cap, hf_load):
@@ -315,7 +315,7 @@ class DatasetLoader:
                 question=q, context=p[:1500],
                 answer="yes" if item.get("answer", False) else "no",
                 id=f"boolq_{i}", source="boolq",
-                difficulty=DifficultyLevel.BEGINNER, category="yes_no_qa"))
+                difficulty=DifficultyLevel.INTERMEDIATE, category="yes_no_qa"))
         return out
 
     def _load_faithdial(self, cap, hf_load):
@@ -339,7 +339,7 @@ class DatasetLoader:
             out.append(QAExample(
                 question=question, context=ctx, answer=answer,
                 id=f"faithdial_{i}", source="faithdial",
-                difficulty=DifficultyLevel.ADVANCED, category="hallucination_detection"))
+                difficulty=DifficultyLevel.EXPERT, category="hallucination_detection"))
         return out
 
     def _load_fever(self, cap, hf_load):
@@ -359,7 +359,7 @@ class DatasetLoader:
                 question=f"Is this claim SUPPORTS, REFUTES, or NOT ENOUGH INFO? Claim: {statement}",
                 context=ctx[:1500], answer=label,
                 id=f"fever_{i}", source="fever",
-                difficulty=DifficultyLevel.ADVANCED, category="fact_verification"))
+                difficulty=DifficultyLevel.EXPERT, category="fact_verification"))
         return out
 
     def _load_arc(self, cap, hf_load):
@@ -380,7 +380,7 @@ class DatasetLoader:
                     out.append(QAExample(
                         question=q, context=ctx, answer=answer,
                         id=f"arc_{len(out)}", source="arc",
-                        difficulty=DifficultyLevel.ADVANCED, category="science_exam"))
+                        difficulty=DifficultyLevel.EXPERT, category="science_exam"))
             except Exception:
                 continue
         return out
@@ -402,7 +402,7 @@ class DatasetLoader:
             out.append(QAExample(
                 question=q, context=ctx[:1500], answer=answer,
                 id=f"openbookqa_{i}", source="openbookqa",
-                difficulty=DifficultyLevel.INTERMEDIATE, category="science_facts"))
+                difficulty=DifficultyLevel.ADVANCED, category="science_facts"))
         return out
 
     def _load_ms_marco(self, cap, hf_load):
