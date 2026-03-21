@@ -72,12 +72,14 @@ print(result["reward"], result["is_hallucination"])
 ### Python SDK
 
 ```python
-pip install hallucination-guard-sdk   # coming soon
-from hallucination_guard import HallucinationGuardEnv
+pip install openenv-halluguard
+from openenv_halluguard import HallucinationGuardEnv
 env = HallucinationGuardEnv()
-obs = env.reset()
-result = env.step(obs["question"], obs["context"], your_model)
+results = env.evaluate(your_model_fn, episodes=5)
+env.print_report(results)
 ```
+
+### HallucinationGuard - [Website](https://huggingface.co/spaces/SamSankar/hallucination-guard-env) · [PyPI](https://pypi.org/project/openenv-halluguard/) · [Docs](https://samsankar-hallucination-guard-env.hf.space/docs)
     """,
     version="3.0.0",
     contact={"name": "HallucinationGuard", "url": "https://huggingface.co/spaces/SamSankar/hallucination-guard-env"},
