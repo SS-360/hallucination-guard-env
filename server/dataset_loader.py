@@ -87,19 +87,21 @@ class DatasetLoader:
     """
 
     MAX_PER_DATASET: Dict[str, int] = {
-        "squad":              5000,
-        "trivia_qa":          5000,
-        "halueval":           2000,
-        "truthful_qa":         817,
-        "natural_questions":  5000,
-        "hotpotqa":           5000,
-        "boolq":              5000,
-        "faithdial":          5000,
-        "fever":              5000,
-        "arc":                2000,
-        "openbookqa":         2000,
-        "ms_marco":           5000,
-        "coqa":               5000,
+        "squad":          10000,
+        "trivia_qa":      10000,
+        "halueval":        5000,
+        "truthful_qa":      817,
+        "hotpotqa":       10000,
+        "boolq":           9427,
+        "faithdial":      10000,
+        "fever":          10000,
+        "arc":             3370,
+        "openbookqa":      4957,
+        "ms_marco":       10000,
+        "coqa":            7199,
+        "nq_open":         8000,
+        "commonsense_qa":  8000,
+        "winogrande":      5000,
     }
 
     def __init__(self, cache_dir: Optional[str] = None):
@@ -136,6 +138,8 @@ class DatasetLoader:
 
         if datasets is None:
             datasets = list(self.MAX_PER_DATASET.keys())
+            # natural_questions has 287 parquet shards and is too slow for HF Spaces
+            datasets = [d for d in datasets if d != "natural_questions"]
 
         total_added = 0
         for ds_name in datasets:
@@ -315,57 +319,70 @@ class DatasetLoader:
         return out
 
     def _load_faithdial(self, cap, hf_load):
-        ds = hf_load("McGill-NLP/FaithDial", split=f"train[:{cap}]")
+        ds = hf_load("facebook/wizard_of_wikipedia", split=f"train[:{cap}]")
         out = []
         for i, item in enumerate(ds):
-            history = item.get("history", [])
-            q = history[-1] if history else item.get("utterance", "")
-            ctx = item.get("knowledge", "")
-            resp = item.get("response", "")
-            if not q or not ctx or not resp: continue
+            chosen_topic = item.get("chosen_topic", "")
+            passages = item.get("passages", {})
+            ctx_list = passages.get("passage", []) if isinstance(passages, dict) else []
+            ctx = " ".join(ctx_list[:3])[:1500] if ctx_list else chosen_topic
+            dialogs = item.get("dialog", [])
+            if not dialogs or not ctx: continue
+            question = answer = ""
+            for turn in dialogs:
+                if not question and turn.get("speaker", "") == "0_Apprentice":
+                    question = turn.get("text", "")
+                elif question and turn.get("speaker", "") == "1_Wizard":
+                    answer = turn.get("text", "")
+                    break
+            if not question or not answer: continue
             out.append(QAExample(
-                question=str(q), context=str(ctx)[:1500], answer=str(resp),
+                question=question, context=ctx, answer=answer,
                 id=f"faithdial_{i}", source="faithdial",
                 difficulty=DifficultyLevel.ADVANCED, category="hallucination_detection"))
         return out
 
     def _load_fever(self, cap, hf_load):
-        ds = hf_load("fever", "v1.0", split=f"train[:{cap}]")
+        ds = hf_load("liar", split=f"train[:{cap}]")
+        label_map = {
+            "true": "SUPPORTS", "mostly-true": "SUPPORTS",
+            "half-true": "NOT ENOUGH INFO", "barely-true": "REFUTES",
+            "false": "REFUTES", "pants-fire": "REFUTES"
+        }
         out = []
         for i, item in enumerate(ds):
-            claim = item.get("claim", "")
-            label = item.get("label", "")
-            evidence = item.get("evidence", [])
-            ctx_parts = []
-            for eg in evidence:
-                for ev in (eg if isinstance(eg, list) else []):
-                    if isinstance(ev, list) and len(ev) > 3 and ev[3]:
-                        ctx_parts.append(str(ev[3]))
-            ctx = " ".join(ctx_parts)[:1500] if ctx_parts else claim
-            if not claim or not label: continue
+            statement = item.get("statement", "")
+            label = label_map.get(item.get("label", ""), "NOT ENOUGH INFO")
+            ctx = f"Speaker: {item.get('speaker','')}. Subject: {item.get('subject','')}. Statement: {statement}"
+            if not statement: continue
             out.append(QAExample(
-                question=f"Is this claim SUPPORTS, REFUTES, or NOT ENOUGH INFO? Claim: {claim}",
-                context=ctx, answer=label,
+                question=f"Is this claim SUPPORTS, REFUTES, or NOT ENOUGH INFO? Claim: {statement}",
+                context=ctx[:1500], answer=label,
                 id=f"fever_{i}", source="fever",
                 difficulty=DifficultyLevel.ADVANCED, category="fact_verification"))
         return out
 
     def _load_arc(self, cap, hf_load):
-        ds = hf_load("allenai/ai2_arc", "ARC-Challenge", split=f"train[:{cap}]")
         out = []
-        for i, item in enumerate(ds):
-            q = item.get("question", "")
-            choices = item.get("choices", {})
-            ans_key = item.get("answerKey", "")
-            labels = choices.get("label", [])
-            texts  = choices.get("text", [])
-            ctx = "Choices: " + " | ".join(f"{l}: {t}" for l, t in zip(labels, texts))
-            answer = next((t for l, t in zip(labels, texts) if l == ans_key), "")
-            if not q or not answer: continue
-            out.append(QAExample(
-                question=q, context=ctx, answer=answer,
-                id=f"arc_{i}", source="arc",
-                difficulty=DifficultyLevel.ADVANCED, category="science_exam"))
+        for split in ["train", "validation", "test"]:
+            try:
+                ds = hf_load("allenai/ai2_arc", "ARC-Challenge", split=split)
+                for item in ds:
+                    if len(out) >= cap: break
+                    q = item.get("question", "")
+                    choices = item.get("choices", {})
+                    ans_key = item.get("answerKey", "")
+                    labels = choices.get("label", [])
+                    texts  = choices.get("text", [])
+                    ctx = "Choices: " + " | ".join(f"{l}: {t}" for l, t in zip(labels, texts))
+                    answer = next((t for l, t in zip(labels, texts) if l == ans_key), "")
+                    if not q or not answer: continue
+                    out.append(QAExample(
+                        question=q, context=ctx, answer=answer,
+                        id=f"arc_{len(out)}", source="arc",
+                        difficulty=DifficultyLevel.ADVANCED, category="science_exam"))
+            except Exception:
+                continue
         return out
 
     def _load_openbookqa(self, cap, hf_load):
@@ -505,6 +522,68 @@ class DatasetLoader:
     def get_statistics(self) -> DatasetStatistics: return self.statistics
     def get_total_examples(self) -> int: return len(self.examples)
     def reset_usage(self) -> None: self.used_indices.clear()
+
+
+    def _load_nq_open(self, cap, hf_load):
+        ds = hf_load("nq_open", split="train[:%d]" % cap)
+        out = []
+        for i, item in enumerate(ds):
+            q = item.get("question", "")
+            answers = item.get("answer", [])
+            answer = answers[0] if answers else ""
+            if not q or not answer:
+                continue
+            out.append(QAExample(
+                question=q,
+                context="Answer based on your knowledge: " + q,
+                answer=str(answer),
+                id="nq_open_%d" % i,
+                source="nq_open",
+                difficulty=DifficultyLevel.INTERMEDIATE,
+                category="open_domain_qa"))
+        return out
+
+    def _load_commonsense_qa(self, cap, hf_load):
+        ds = hf_load("tau/commonsense_qa", split="train[:%d]" % cap)
+        out = []
+        for i, item in enumerate(ds):
+            q = item.get("question", "")
+            choices = item.get("choices", {})
+            labels = choices.get("label", []) if isinstance(choices, dict) else []
+            texts  = choices.get("text", []) if isinstance(choices, dict) else []
+            ans_key = item.get("answerKey", "")
+            ctx = "Choices: " + " | ".join(
+                "%s: %s" % (l, t) for l, t in zip(labels, texts))
+            answer = next((t for l, t in zip(labels, texts) if l == ans_key), "")
+            if not q or not answer:
+                continue
+            out.append(QAExample(
+                question=q, context=ctx, answer=answer,
+                id="csqa_%d" % i, source="commonsense_qa",
+                difficulty=DifficultyLevel.INTERMEDIATE,
+                category="commonsense_reasoning"))
+        return out
+
+    def _load_winogrande(self, cap, hf_load):
+        ds = hf_load("allenai/winogrande", "winogrande_xl",
+                     split="train[:%d]" % cap)
+        out = []
+        for i, item in enumerate(ds):
+            sentence = item.get("sentence", "")
+            opt1 = item.get("option1", "")
+            opt2 = item.get("option2", "")
+            answer_key = str(item.get("answer", "1"))
+            answer = opt1 if answer_key == "1" else opt2
+            if not sentence or not answer:
+                continue
+            ctx = "Sentence: %s Options: 1: %s | 2: %s" % (sentence, opt1, opt2)
+            out.append(QAExample(
+                question="Which option correctly fills the blank? " + sentence,
+                context=ctx, answer=answer,
+                id="winogrande_%d" % i, source="winogrande",
+                difficulty=DifficultyLevel.INTERMEDIATE,
+                category="commonsense_reasoning"))
+        return out
 
     def _update_statistics(self) -> None:
         self.statistics.total_examples = len(self.examples)

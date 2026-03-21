@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from fastapi import FastAPI, HTTPException, Header
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 from typing import Dict, Any, Optional, List
 
 from models import HallucinationAction, HallucinationObservation, HallucinationState
@@ -26,7 +27,21 @@ logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Pre-load datasets once at startup so requests are instant."""
+    global _default_env
+    logger.info("Pre-loading datasets at startup...")
+    try:
+        _default_env = HallucinationEnvironment()
+        logger.info(f"Startup complete — {_default_env.dataset_loader.get_total_examples():,} examples loaded.")
+    except Exception as e:
+        logger.warning(f"Startup pre-load failed ({e}); will load on first request.")
+    yield
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title="HallucinationGuard-Env",
     description="""
 ## 🛡️ HallucinationGuard-Env v3.0
