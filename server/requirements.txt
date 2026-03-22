@@ -1,26 +1,33 @@
-# Core OpenEnv dependencies
+# ── Core server ────────────────────────────────────────────────────────────────
 fastapi>=0.100.0
 uvicorn>=0.23.0
 requests>=2.31.0
 
-# ML / semantic similarity (makes hallucination detection real)
-sentence-transformers>=2.7.0   # all-MiniLM-L6-v2 embeddings + nli-deberta-v3-small NLI
-torch>=2.0.0                   # required by sentence-transformers
+# ── NLP / ML ───────────────────────────────────────────────────────────────────
+# Embeddings + NLI cross-encoder (upgraded to nli-deberta-v3-large)
+sentence-transformers>=2.7.0
+torch>=2.0.0
 numpy>=1.24.0
 
-# Real QA datasets from HuggingFace Hub
-datasets>=2.14.0               # SQuAD, TriviaQA, HaluEval, TruthfulQA
+# ROUGE-1/2/L  (Lin 2004) — standard QA/summarisation overlap metric
+rouge-score>=0.1.2
 
-# Model adapters (install as needed per provider)
-# openai>=1.0.0                # OpenAI GPT models
-# anthropic>=0.18.0            # Anthropic Claude models
-# transformers>=4.35.0         # HuggingFace local models
+# BERTScore  (Zhang et al. 2020) — contextual embedding similarity
+bert-score>=0.3.13
 
-# Data / serialization
+# AlignScore  (Zha et al. ACL 2023) — faithfulness / grounding scorer
+# Requires transformers + a small roberta-base checkpoint (auto-downloaded)
+alignscore>=0.1.0
+transformers>=4.35.0
+
+# ── HuggingFace datasets ────────────────────────────────────────────────────────
+datasets>=2.14.0
+
+# ── Data / serialisation ────────────────────────────────────────────────────────
 pydantic>=2.0.0
 aiofiles>=23.0.0
 python-json-logger>=2.0.0
 
-# Testing
+# ── Testing ─────────────────────────────────────────────────────────────────────
 pytest>=7.4.0
 pytest-asyncio>=0.21.0
