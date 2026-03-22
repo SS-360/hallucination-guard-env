@@ -4,10 +4,13 @@ description: |
   ONLY from verified context documents — penalizing hallucination and
   rewarding factual grounding.
 
+  v4.0: 1,090,163 examples across 38 real-world datasets spanning QA,
+  medical, math, science, news, and summarisation domains.
+
   Inspired by real experiences with AI hallucination during research,
   this environment helps train more reliable and trustworthy AI systems.
 
-version: 0.1.0
+version: 4.0.0
 author: community
 license: MIT
 
@@ -47,8 +50,39 @@ tags:
 
 # Dataset info
 datasets:
-  - synthetic-hackathon-qa
-  - triviaqa
   - squad
+  - squad_v2
+  - trivia_qa
   - halueval
-  - truthfulqa
+  - truthful_qa
+  - hotpotqa
+  - boolq
+  - faithdial
+  - fever
+  - arc
+  - openbookqa
+  - ms_marco
+  - coqa
+  - nq_open
+  - commonsense_qa
+  - winogrande
+  - drop
+  - race
+  - newsqa
+  - hellaswag
+  - adversarial_qa
+  - ag_news
+  - aqua_rat
+  - circa
+  - climate_fever
+  - cnn_dailymail
+  - medqa
+  - medmcqa
+  - medical_questions
+  - pubmedqa
+  - qasc
+  - quartz
+  - quail
+  - sciq
+  - scitail
+  - xsum
