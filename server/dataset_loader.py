@@ -1,12 +1,15 @@
 """
-HallucinationGuard-Env — Dataset Loader v3.0
-50,000+ examples across 13 diverse real-world QA datasets.
+HallucinationGuard-Env — Dataset Loader v4.0
+1,000,000+ examples across 38 diverse real-world QA datasets.
 No synthetic hackathon data. Production-grade caching per dataset.
 
 Datasets:
-  SQuAD, TriviaQA, HaluEval, TruthfulQA,
-  Natural Questions, HotpotQA, BoolQ, FaithDial,
-  FEVER, ARC-Challenge, OpenBookQA, MS MARCO, CoQA
+  SQuAD, SQuAD-v2, TriviaQA, HaluEval, TruthfulQA, HotpotQA, BoolQ,
+  FaithDial, FEVER, ARC, OpenBookQA, MS MARCO, CoQA, NQ Open,
+  CommonsenseQA, WinoGrande, AdversarialQA, AG News, AQUA-RAT,
+  Circa, Climate-FEVER, CNN/DailyMail, HellaSwag, Medical QA,
+  MedMCQA, MedQA, QASC, QUAIL, QuaRTz, RACE, SciQ, SciTail,
+  XSum and more
 """
 
 import json
@@ -87,21 +90,50 @@ class DatasetLoader:
     """
 
     MAX_PER_DATASET: Dict[str, int] = {
-        "squad":          10000,
-        "trivia_qa":      10000,
-        "halueval":        5000,
-        "truthful_qa":      817,
-        "hotpotqa":       10000,
-        "boolq":           9427,
-        "faithdial":      10000,
-        "fever":          10000,
-        "arc":             3370,
-        "openbookqa":      4957,
-        "ms_marco":       10000,
-        "coqa":            7199,
-        "nq_open":         8000,
-        "commonsense_qa":  8000,
-        "winogrande":      5000,
+        # ── Core QA ──────────────────────────────────────────────────────────
+        "squad":               50000,
+        "squad_v2":            50000,
+        "trivia_qa":           50000,
+        "hotpotqa":            50000,
+        "coqa":                 7199,
+        "nq_open":             50000,
+        "ms_marco":            50000,
+        "drop":                50000,
+        "race":                50000,
+        "newsqa":              50000,
+        # ── Hallucination & Factuality ────────────────────────────────────────
+        "halueval":            10000,
+        "truthful_qa":           817,
+        "fever":               50000,
+        "climate_fever":        1535,
+        "scitail":             23596,
+        # ── Commonsense & Inference ───────────────────────────────────────────
+        "boolq":                9427,
+        "commonsense_qa":       9741,
+        "winogrande":          40398,
+        "hellaswag":           40000,
+        "circa":               34268,
+        "adversarial_qa":      30000,
+        # ── Science & Education ───────────────────────────────────────────────
+        "arc":                  3370,
+        "openbookqa":           4957,
+        "sciq":                11679,
+        "qasc":                 8134,
+        "quartz":               2696,
+        "quail":               10246,
+        # ── Medical ──────────────────────────────────────────────────────────
+        "medqa":               10000,
+        "medmcqa":             20000,
+        "medical_questions":    3000,
+        "pubmedqa":             1000,
+        # ── Math & Reasoning ─────────────────────────────────────────────────
+        "aqua_rat":            97467,
+        # ── Dialogue & Grounded ───────────────────────────────────────────────
+        "faithdial":           50000,
+        # ── News & Summarisation ──────────────────────────────────────────────
+        "ag_news":             50000,
+        "cnn_dailymail":       50000,
+        "xsum":                50000,
     }
 
     def __init__(self, cache_dir: Optional[str] = None):
@@ -584,6 +616,423 @@ class DatasetLoader:
                 difficulty=DifficultyLevel.INTERMEDIATE,
                 category="commonsense_reasoning"))
         return out
+
+
+    # ── New v4.0 Dataset Loaders ──────────────────────────────────────────────
+
+    def _load_squad_v2(self, cap, hf_load):
+        ds = hf_load("rajpurkar/squad_v2", split=f"train[:{cap}]")
+        out = []
+        for i, item in enumerate(ds):
+            ans = item.get("answers", {}).get("text", [])
+            answer = ans[0] if ans else "No answer"
+            ctx = item.get("context", "")
+            if not ctx: continue
+            out.append(QAExample(
+                question=item["question"], context=ctx[:1500],
+                answer=answer, id=f"squadv2_{i}", source="squad_v2",
+                difficulty=DifficultyLevel.ADVANCED, category="reading_comprehension_unanswerable"))
+        return out
+
+    def _load_drop(self, cap, hf_load):
+        try:
+            ds = hf_load("ucinlp/drop", split=f"train[:{cap}]")
+            out = []
+            for i, item in enumerate(ds):
+                q = item.get("question", "")
+                passage = item.get("passage", "")
+                answers = item.get("answers_spans", {})
+                spans = answers.get("spans", []) if isinstance(answers, dict) else []
+                answer = spans[0] if spans else ""
+                if not q or not passage or not answer: continue
+                out.append(QAExample(
+                    question=q, context=passage[:1500], answer=str(answer),
+                    id=f"drop_{i}", source="drop",
+                    difficulty=DifficultyLevel.EXPERT, category="numerical_reasoning"))
+            return out
+        except Exception as e:
+            print(f"  drop loader error: {e}"); return []
+
+    def _load_race(self, cap, hf_load):
+        out = []
+        try:
+            for split in ["train", "validation", "test"]:
+                ds = hf_load("ehovy/race", "all", split=split)
+                for item in ds:
+                    if len(out) >= cap: break
+                    q = item.get("question", "")
+                    article = item.get("article", "")
+                    options = item.get("options", [])
+                    ans_key = item.get("answer", "")
+                    key_map = {"A": 0, "B": 1, "C": 2, "D": 3}
+                    idx = key_map.get(ans_key, -1)
+                    answer = options[idx] if 0 <= idx < len(options) else ""
+                    if not q or not article or not answer: continue
+                    out.append(QAExample(
+                        question=q, context=article[:1500], answer=answer,
+                        id=f"race_{len(out)}", source="race",
+                        difficulty=DifficultyLevel.ADVANCED, category="reading_comprehension_exam"))
+        except Exception as e:
+            print(f"  race loader error: {e}")
+        return out
+
+    def _load_newsqa(self, cap, hf_load):
+        try:
+            ds = hf_load("lucadiliello/newsqa", split=f"train[:{cap}]")
+            out = []
+            for i, item in enumerate(ds):
+                q = item.get("question", "")
+                story = item.get("story_text", item.get("context", ""))
+                answers = item.get("answers", {})
+                if isinstance(answers, list) and answers:
+                    answer = str(answers[0])
+                elif isinstance(answers, dict):
+                    answer = str(answers.get("answer_token_ranges", ""))
+                else:
+                    answer = ""
+                if not q or not story or not answer: continue
+                out.append(QAExample(
+                    question=str(q), context=str(story)[:1500], answer=answer,
+                    id=f"newsqa_{i}", source="newsqa",
+                    difficulty=DifficultyLevel.INTERMEDIATE, category="news_qa"))
+            return out
+        except Exception as e:
+            print(f"  newsqa loader error: {e}"); return []
+
+    def _load_hellaswag(self, cap, hf_load):
+        try:
+            ds = hf_load("Rowan/hellaswag", split=f"train[:{cap}]")
+            out = []
+            for i, item in enumerate(ds):
+                ctx = item.get("ctx", "")
+                endings = item.get("endings", [])
+                label = item.get("label", "")
+                try:
+                    idx = int(label)
+                    answer = endings[idx] if 0 <= idx < len(endings) else ""
+                except (ValueError, TypeError):
+                    answer = ""
+                if not ctx or not answer: continue
+                choices_str = " | ".join(f"{j}: {e}" for j, e in enumerate(endings))
+                out.append(QAExample(
+                    question=f"What is the most likely continuation? {ctx}",
+                    context=f"Context: {ctx} | Choices: {choices_str}",
+                    answer=answer, id=f"hellaswag_{i}", source="hellaswag",
+                    difficulty=DifficultyLevel.INTERMEDIATE, category="commonsense_completion"))
+            return out
+        except Exception as e:
+            print(f"  hellaswag loader error: {e}"); return []
+
+    def _load_adversarial_qa(self, cap, hf_load):
+        try:
+            ds = hf_load("adversarial_qa", "adversarialQA", split=f"train[:{cap}]")
+            out = []
+            for i, item in enumerate(ds):
+                q = item.get("question", "")
+                ctx = item.get("context", "")
+                ans = item.get("answers", {}).get("text", [])
+                answer = ans[0] if ans else ""
+                if not q or not ctx or not answer: continue
+                out.append(QAExample(
+                    question=q, context=ctx[:1500], answer=answer,
+                    id=f"advqa_{i}", source="adversarial_qa",
+                    difficulty=DifficultyLevel.EXPERT, category="adversarial_reading_comprehension"))
+            return out
+        except Exception as e:
+            print(f"  adversarial_qa loader error: {e}"); return []
+
+    def _load_ag_news(self, cap, hf_load):
+        try:
+            ds = hf_load("fancyzhx/ag_news", split=f"train[:{cap}]")
+            label_map = {0: "World", 1: "Sports", 2: "Business", 3: "Science/Technology"}
+            out = []
+            for i, item in enumerate(ds):
+                text = item.get("text", "")
+                label = label_map.get(item.get("label", -1), "")
+                if not text or not label: continue
+                out.append(QAExample(
+                    question="What is the topic category of this news article?",
+                    context=text[:1500], answer=label,
+                    id=f"agnews_{i}", source="ag_news",
+                    difficulty=DifficultyLevel.BEGINNER, category="news_classification"))
+            return out
+        except Exception as e:
+            print(f"  ag_news loader error: {e}"); return []
+
+    def _load_aqua_rat(self, cap, hf_load):
+        try:
+            ds = hf_load("aqua_rat", "raw", split=f"train[:{cap}]")
+            out = []
+            for i, item in enumerate(ds):
+                q = item.get("question", "")
+                options = item.get("options", [])
+                correct = item.get("correct", "")
+                rationale = item.get("rationale", "")
+                answer = next((o for o in options if o.startswith(correct + ")")), correct)
+                ctx = f"Options: {' | '.join(options)} | Rationale: {rationale}"
+                if not q or not answer: continue
+                out.append(QAExample(
+                    question=q, context=ctx[:1500], answer=answer,
+                    id=f"aquarat_{i}", source="aqua_rat",
+                    difficulty=DifficultyLevel.EXPERT, category="math_word_problems"))
+            return out
+        except Exception as e:
+            print(f"  aqua_rat loader error: {e}"); return []
+
+    def _load_circa(self, cap, hf_load):
+        try:
+            ds = hf_load("circa", split=f"train[:{cap}]")
+            out = []
+            for i, item in enumerate(ds):
+                q = item.get("question_x", "")
+                ans = item.get("answer_y", "")
+                ctx = item.get("context", item.get("canquestion_x", q))
+                judgement = item.get("goldstandard1", "")
+                if not q or not ans: continue
+                out.append(QAExample(
+                    question=q, context=str(ctx)[:1500], answer=str(ans),
+                    id=f"circa_{i}", source="circa",
+                    difficulty=DifficultyLevel.INTERMEDIATE, category="social_context_qa"))
+            return out
+        except Exception as e:
+            print(f"  circa loader error: {e}"); return []
+
+    def _load_climate_fever(self, cap, hf_load):
+        try:
+            ds = hf_load("climate_fever", split=f"test[:{cap}]")
+            out = []
+            for i, item in enumerate(ds):
+                claim = item.get("claim", "")
+                label_map = {0: "SUPPORTS", 1: "REFUTES", 2: "NOT ENOUGH INFO", 3: "DISPUTED"}
+                label = label_map.get(item.get("claim_label", 2), "NOT ENOUGH INFO")
+                evidences = item.get("evidences", [])
+                ctx = " ".join([e.get("evidence", "") for e in evidences[:3]])[:1500] if evidences else claim
+                if not claim: continue
+                out.append(QAExample(
+                    question=f"Is this climate claim supported? Claim: {claim}",
+                    context=ctx, answer=label,
+                    id=f"climatefever_{i}", source="climate_fever",
+                    difficulty=DifficultyLevel.EXPERT, category="climate_fact_verification"))
+            return out
+        except Exception as e:
+            print(f"  climate_fever loader error: {e}"); return []
+
+    def _load_cnn_dailymail(self, cap, hf_load):
+        try:
+            ds = hf_load("abisee/cnn_dailymail", "3.0.0", split=f"train[:{cap}]")
+            out = []
+            for i, item in enumerate(ds):
+                article = item.get("article", "")
+                highlights = item.get("highlights", "")
+                if not article or not highlights: continue
+                out.append(QAExample(
+                    question="What are the key points of this article?",
+                    context=article[:1500], answer=highlights[:500],
+                    id=f"cnndm_{i}", source="cnn_dailymail",
+                    difficulty=DifficultyLevel.INTERMEDIATE, category="news_summarisation"))
+            return out
+        except Exception as e:
+            print(f"  cnn_dailymail loader error: {e}"); return []
+
+    def _load_scitail(self, cap, hf_load):
+        try:
+            ds = hf_load("allenai/scitail", "tsv_format", split=f"train[:{cap}]")
+            out = []
+            for i, item in enumerate(ds):
+                premise    = item.get("premise", "")
+                hypothesis = item.get("hypothesis", "")
+                label      = item.get("label", "neutral")
+                answer     = "SUPPORTS" if label == "entails" else "REFUTES"
+                if not premise or not hypothesis: continue
+                out.append(QAExample(
+                    question=f"Does the premise support this hypothesis? Hypothesis: {hypothesis}",
+                    context=f"Premise: {premise}", answer=answer,
+                    id=f"scitail_{i}", source="scitail",
+                    difficulty=DifficultyLevel.ADVANCED, category="science_entailment"))
+            return out
+        except Exception as e:
+            print(f"  scitail loader error: {e}"); return []
+
+    def _load_medqa(self, cap, hf_load):
+        try:
+            ds = hf_load("GBaker/MedQA-USMLE-4-options", split=f"train[:{cap}]")
+            out = []
+            for i, item in enumerate(ds):
+                q = item.get("question", "")
+                options = item.get("options", {})
+                answer_idx = item.get("answer_idx", "")
+                answer = options.get(answer_idx, "") if isinstance(options, dict) else ""
+                ctx = "Options: " + " | ".join(f"{k}: {v}" for k, v in options.items()) if isinstance(options, dict) else ""
+                if not q or not answer: continue
+                out.append(QAExample(
+                    question=q, context=ctx[:1500], answer=answer,
+                    id=f"medqa_{i}", source="medqa",
+                    difficulty=DifficultyLevel.EXPERT, category="medical_qa"))
+            return out
+        except Exception as e:
+            print(f"  medqa loader error: {e}"); return []
+
+    def _load_medmcqa(self, cap, hf_load):
+        try:
+            ds = hf_load("openlifescienceai/medmcqa", split=f"train[:{cap}]")
+            out = []
+            for i, item in enumerate(ds):
+                q = item.get("question", "")
+                opts = [item.get(k, "") for k in ["opa", "opb", "opc", "opd"]]
+                cop = item.get("cop", 0)
+                answer = opts[cop - 1] if 1 <= cop <= 4 else ""
+                ctx = "Options: " + " | ".join(f"{chr(65+j)}: {o}" for j, o in enumerate(opts))
+                if not q or not answer: continue
+                out.append(QAExample(
+                    question=q, context=ctx[:1500], answer=answer,
+                    id=f"medmcqa_{i}", source="medmcqa",
+                    difficulty=DifficultyLevel.EXPERT, category="medical_mcq"))
+            return out
+        except Exception as e:
+            print(f"  medmcqa loader error: {e}"); return []
+
+    def _load_medical_questions(self, cap, hf_load):
+        try:
+            ds = hf_load("medical_questions_pairs", split=f"train[:{cap}]")
+            out = []
+            for i, item in enumerate(ds):
+                q1 = item.get("question_1", "")
+                q2 = item.get("question_2", "")
+                label = item.get("label", 0)
+                answer = "similar" if label == 1 else "different"
+                ctx = f"Question 1: {q1} | Question 2: {q2}"
+                if not q1 or not q2: continue
+                out.append(QAExample(
+                    question=f"Are these two medical questions asking about the same thing?",
+                    context=ctx[:1500], answer=answer,
+                    id=f"medpairs_{i}", source="medical_questions",
+                    difficulty=DifficultyLevel.ADVANCED, category="medical_similarity"))
+            return out
+        except Exception as e:
+            print(f"  medical_questions loader error: {e}"); return []
+
+    def _load_qasc(self, cap, hf_load):
+        try:
+            ds = hf_load("allenai/qasc", split=f"train[:{cap}]")
+            out = []
+            for i, item in enumerate(ds):
+                q = item.get("question", "")
+                choices = item.get("choices", {})
+                labels = choices.get("label", []) if isinstance(choices, dict) else []
+                texts  = choices.get("text", []) if isinstance(choices, dict) else []
+                ans_key = item.get("answerKey", "")
+                fact1 = item.get("fact1", "")
+                fact2 = item.get("fact2", "")
+                answer = next((t for l, t in zip(labels, texts) if l == ans_key), "")
+                ctx = f"Fact 1: {fact1} | Fact 2: {fact2} | Choices: " + " | ".join(f"{l}: {t}" for l, t in zip(labels, texts))
+                if not q or not answer: continue
+                out.append(QAExample(
+                    question=q, context=ctx[:1500], answer=answer,
+                    id=f"qasc_{i}", source="qasc",
+                    difficulty=DifficultyLevel.ADVANCED, category="multi_hop_science"))
+            return out
+        except Exception as e:
+            print(f"  qasc loader error: {e}"); return []
+
+    def _load_quartz(self, cap, hf_load):
+        try:
+            ds = hf_load("allenai/quartz", split=f"train[:{cap}]")
+            out = []
+            for i, item in enumerate(ds):
+                q = item.get("question", "")
+                choices = item.get("choices", {})
+                labels = choices.get("label", []) if isinstance(choices, dict) else []
+                texts  = choices.get("text", []) if isinstance(choices, dict) else []
+                ans_key = item.get("answerKey", "")
+                para = item.get("para", "")
+                answer = next((t for l, t in zip(labels, texts) if l == ans_key), "")
+                ctx = f"{para} | Choices: " + " | ".join(f"{l}: {t}" for l, t in zip(labels, texts))
+                if not q or not answer: continue
+                out.append(QAExample(
+                    question=q, context=ctx[:1500], answer=answer,
+                    id=f"quartz_{i}", source="quartz",
+                    difficulty=DifficultyLevel.ADVANCED, category="qualitative_science"))
+            return out
+        except Exception as e:
+            print(f"  quartz loader error: {e}"); return []
+
+    def _load_quail(self, cap, hf_load):
+        try:
+            ds = hf_load("potsawee/quail", split=f"train[:{cap}]")
+            out = []
+            for i, item in enumerate(ds):
+                q = item.get("question", "")
+                ctx = item.get("context", "")
+                answers = item.get("answers", [])
+                correct_idx = item.get("correct_answer_id", 0)
+                answer = answers[correct_idx] if answers and 0 <= correct_idx < len(answers) else ""
+                if not q or not ctx or not answer: continue
+                out.append(QAExample(
+                    question=q, context=ctx[:1500], answer=answer,
+                    id=f"quail_{i}", source="quail",
+                    difficulty=DifficultyLevel.ADVANCED, category="reading_comprehension"))
+            return out
+        except Exception as e:
+            print(f"  quail loader error: {e}"); return []
+
+    def _load_pubmedqa(self, cap, hf_load):
+        try:
+            ds = hf_load("qiaojin/PubMedQA", "pqa_labeled", split=f"train[:{cap}]")
+            out = []
+            for i, item in enumerate(ds):
+                q = item.get("question", "")
+                ctx_list = item.get("context", {})
+                if isinstance(ctx_list, dict):
+                    ctx = " ".join(ctx_list.get("contexts", []))[:1500]
+                else:
+                    ctx = str(ctx_list)[:1500]
+                answer = item.get("long_answer", item.get("final_decision", ""))
+                if not q or not ctx or not answer: continue
+                out.append(QAExample(
+                    question=q, context=ctx, answer=str(answer),
+                    id=f"pubmedqa_{i}", source="pubmedqa",
+                    difficulty=DifficultyLevel.EXPERT, category="biomedical_qa"))
+            return out
+        except Exception as e:
+            print(f"  pubmedqa loader error: {e}"); return []
+
+    def _load_xsum(self, cap, hf_load):
+        try:
+            ds = hf_load("EdinburghNLP/xsum", split=f"train[:{cap}]")
+            out = []
+            for i, item in enumerate(ds):
+                doc = item.get("document", "")
+                summary = item.get("summary", "")
+                if not doc or not summary: continue
+                out.append(QAExample(
+                    question="Summarise this document in one sentence.",
+                    context=doc[:1500], answer=summary,
+                    id=f"xsum_{i}", source="xsum",
+                    difficulty=DifficultyLevel.ADVANCED, category="summarisation"))
+            return out
+        except Exception as e:
+            print(f"  xsum loader error: {e}"); return []
+
+    def _load_sciq(self, cap, hf_load):
+        try:
+            ds = hf_load("allenai/sciq", split=f"train[:{cap}]")
+            out = []
+            for i, item in enumerate(ds):
+                q = item.get("question", "")
+                support = item.get("support", "")
+                answer = item.get("correct_answer", "")
+                d1 = item.get("distractor1", "")
+                d2 = item.get("distractor2", "")
+                d3 = item.get("distractor3", "")
+                if not q or not answer: continue
+                ctx = f"{support} | Options: {answer} | {d1} | {d2} | {d3}" if support else                       f"Options: {answer} | {d1} | {d2} | {d3}"
+                out.append(QAExample(
+                    question=q, context=ctx[:1500], answer=answer,
+                    id=f"sciq_{i}", source="sciq",
+                    difficulty=DifficultyLevel.ADVANCED, category="science_qa"))
+            return out
+        except Exception as e:
+            print(f"  sciq loader error: {e}"); return []
 
     def _update_statistics(self) -> None:
         self.statistics.total_examples = len(self.examples)
