@@ -1,5 +1,5 @@
 """
-HallucinationGuard-Env v3.0 — Production FastAPI Server
+HallucinationGuard-Env v4.0 — Production FastAPI Server
 
 Endpoints:
   Standard  : POST /reset  POST /step  GET /state  GET /health
@@ -44,11 +44,11 @@ app = FastAPI(
     lifespan=lifespan,
     title="HallucinationGuard-Env",
     description="""
-## 🛡️ HallucinationGuard-Env v3.0
+## 🛡️ HallucinationGuard-Env v4.0
 
 **The production-grade OpenEnv RL environment for training and evaluating LLMs on hallucination avoidance.**
 
-Built on 100,000+ examples across 15 real-world QA datasets:
+Built on 1,000,000+ examples across 38 real-world QA datasets:
 SQuAD · TriviaQA · HaluEval · TruthfulQA · HotpotQA · BoolQ · HH-RLHF ·
 NQ Open · CommonsenseQA · WinoGrande · CoQA · OpenBookQA · MS MARCO · ARC · Medical QA
 
@@ -81,7 +81,7 @@ env.print_report(results)
 
 ### HallucinationGuard - [Website](https://huggingface.co/spaces/SamSankar/hallucination-guard-env) · [PyPI](https://pypi.org/project/openenv-halluguard/) · [Docs](https://samsankar-hallucination-guard-env.hf.space/docs)
     """,
-    version="3.0.0",
+    version="4.0.0",
     contact={"name": "HallucinationGuard", "url": "https://huggingface.co/spaces/SamSankar/hallucination-guard-env"},
     license_info={"name": "MIT"},
 )
@@ -335,18 +335,18 @@ async def remove_from_leaderboard(model_name: str):
 
 @app.get("/health", summary="Health check", tags=["Info"])
 async def health():
-    return {"status": "healthy", "service": "HallucinationGuard-Env", "version": "3.0.0"}
+    return {"status": "healthy", "service": "HallucinationGuard-Env", "version": "4.0.0"}
 
 
 @app.get("/environment/info", summary="Full environment spec", tags=["Info"])
 async def env_info():
     return {
         "name":    "HallucinationGuard-Env",
-        "version": "3.0.0",
+        "version": "4.0.0",
         "description": "Production RL environment for hallucination detection & prevention",
         "datasets": {
             "count": 15,
-            "total_examples": "100,000+",
+            "total_examples": "1,000,000+",
             "sources": [
                 "squad", "trivia_qa", "halueval", "truthful_qa",
                 "hotpotqa", "boolq", "faithdial", "fever", "arc",
