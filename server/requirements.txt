@@ -8,17 +8,16 @@ requests>=2.31.0
 sentence-transformers>=2.7.0
 torch>=2.0.0
 numpy>=1.24.0
+transformers>=4.35.0
 
-# ROUGE-1/2/L  (Lin 2004) — standard QA/summarisation overlap metric
+# ROUGE-1/2/L  (Lin 2004)
 rouge-score>=0.1.2
 
-# BERTScore  (Zhang et al. 2020) — contextual embedding similarity
+# BERTScore  (Zhang et al. 2020)
 bert-score>=0.3.13
 
-# AlignScore  (Zha et al. ACL 2023) — faithfulness / grounding scorer
-# Requires transformers + a small roberta-base checkpoint (auto-downloaded)
-alignscore>=0.1.0
-transformers>=4.35.0
+# AlignScore  (Zha et al. ACL 2023) — install from GitHub, not PyPI
+# git+https://github.com/yuh-zha/AlignScore.git
 
 # ── HuggingFace datasets ────────────────────────────────────────────────────────
 datasets>=2.14.0
