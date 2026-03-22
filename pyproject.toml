@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "hallucination-guard-env"
-version = "0.1.0"
-description = "RL environment for training AI to avoid hallucination"
+version = "4.0.0"
+description = "Production RL environment for training LLMs on hallucination avoidance — 1M+ examples across 38 datasets"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
@@ -20,7 +20,7 @@ keywords = [
     "ai-safety"
 ]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
@@ -44,9 +44,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://huggingface.co/spaces/hallucination-guard/hallucination-guard-env"
-Repository = "https://github.com/hallucination-guard/hallucination-guard-env"
-Documentation = "https://github.com/hallucination-guard/hallucination-guard-env#readme"
+Homepage = "https://huggingface.co/spaces/SamSankar/hallucination-guard-env"
+Repository = "https://github.com/SS-360/Openenv-halluguard"
+Documentation = "https://samsankar-hallucination-guard-env.hf.space/docs"
 
 [tool.hatch.build.targets.wheel]
 packages = ["hallucination_guard_env"]
