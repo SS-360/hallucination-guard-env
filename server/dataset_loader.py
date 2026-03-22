@@ -15,6 +15,7 @@ Datasets:
 import json
 import random
 import os
+import threading
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, field
 from enum import Enum
@@ -136,13 +137,44 @@ class DatasetLoader:
         "xsum":                50000,
     }
 
+    # HF Dataset repo where cache files live
+    HF_CACHE_REPO = "SamSankar/hallucination-guard-cache"
+
+    # Core datasets loaded instantly on startup (~400MB, fits in Space)
+    CORE_DATASETS = [
+        "squad_50000.json",
+        "hotpotqa_50000.json",
+        "fever_50000.json",
+        "faithdial_50000.json",
+        "halueval_10000.json",
+        "truthful_qa_817.json",
+        "nq_open_50000.json",
+        "drop_50000.json",
+        "commonsense_qa_9741.json",
+        "boolq_9427.json",
+        "winogrande_40398.json",
+        "coqa_7199.json",
+        "openbookqa_4957.json",
+        "arc_2590.json",
+        "sciq_11679.json",
+    ]
+
     def __init__(self, cache_dir: Optional[str] = None):
         self.examples:                 List[QAExample]             = []
         self.used_indices:             set                         = set()
         self.current_episode_examples: List[QAExample]             = []
-        self.cache_dir = cache_dir or os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "cache"
-        )
+
+        # Smart cache dir selection:
+        # 1. Local server/cache/ (your PC dev)
+        # 2. /tmp/cache/ (HF Space — populated from HF Dataset repo)
+        local_cache = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache")
+        if os.path.exists(local_cache) and len(os.listdir(local_cache)) > 0:
+            self.cache_dir = local_cache
+            self._using_hf_dataset = False
+        else:
+            self.cache_dir = "/tmp/halluguard_cache"
+            self._using_hf_dataset = True
+
         self.statistics = DatasetStatistics()
         Path(self.cache_dir).mkdir(parents=True, exist_ok=True)
         self.indices_by_difficulty: Dict[DifficultyLevel, List[int]] = {
@@ -153,6 +185,64 @@ class DatasetLoader:
         }
         self.indices_by_category: Dict[str, List[int]] = {}
 
+    def _download_from_hf_dataset(self, filename: str) -> bool:
+        """Download a single cache file from HF Dataset repo to /tmp/halluguard_cache/"""
+        target = os.path.join(self.cache_dir, filename)
+        if os.path.exists(target):
+            return True
+        try:
+            from huggingface_hub import hf_hub_download
+            path = hf_hub_download(
+                repo_id=self.HF_CACHE_REPO,
+                filename=filename,
+                repo_type="dataset",
+                local_dir=self.cache_dir,
+                local_dir_use_symlinks=False,
+            )
+            print(f"  Downloaded {filename} from HF Dataset ✅")
+            return True
+        except Exception as e:
+            print(f"  Failed to download {filename}: {e}")
+            return False
+
+    def _download_extended_in_background(self, all_files: list, core_files: list):
+        """Download non-core datasets in background after startup."""
+        extended = [f for f in all_files if f not in core_files]
+        if not extended:
+            return
+        def _bg():
+            print(f"  Background: downloading {len(extended)} extended datasets...")
+            for fname in extended:
+                if self._download_from_hf_dataset(fname):
+                    # Load into memory immediately after download
+                    fpath = os.path.join(self.cache_dir, fname)
+                    try:
+                        with open(fpath) as f:
+                            cached = json.load(f)
+                        before = len(self.examples)
+                        for ex in cached:
+                            try:
+                                diff = DifficultyLevel(ex.get("difficulty", "intermediate"))
+                            except ValueError:
+                                diff = DifficultyLevel.INTERMEDIATE
+                            self.examples.append(QAExample(
+                                question=ex["question"], context=ex["context"],
+                                answer=ex["answer"], id=ex["id"], source=ex["source"],
+                                difficulty=diff, category=ex.get("category", ""),
+                                hallucination_type=ex.get("hallucination_type"),
+                                entities=ex.get("entities", []),
+                                metadata=ex.get("metadata", {}),
+                            ))
+                        added = len(self.examples) - before
+                        self._update_statistics()
+                        self._build_indices()
+                        print(f"  Background loaded {fname}: +{added:,} examples (total: {len(self.examples):,})")
+                    except Exception as e:
+                        print(f"  Background load error {fname}: {e}")
+            print(f"  Background loading complete. Total: {len(self.examples):,} examples")
+        t = threading.Thread(target=_bg, daemon=True)
+        t.start()
+
     def load_builtin_datasets(self) -> int:
         return 0  # Real datasets only — no synthetic data
 
@@ -162,6 +252,16 @@ class DatasetLoader:
         datasets: Optional[List[str]] = None,
         cache: bool = True,
     ) -> int:
+        """
+        Load datasets. On HF Space: downloads from HF Dataset repo.
+        On local PC: reads from server/cache/ directly.
+        Core datasets load instantly. Extended datasets load in background.
+        """
+
+        if self._using_hf_dataset:
+            return self._load_from_hf_dataset_repo()
+
+        # Local PC path — read directly from server/cache/
         try:
             from datasets import load_dataset as hf_load
         except ImportError:
@@ -170,7 +270,6 @@ class DatasetLoader:
 
         if datasets is None:
             datasets = list(self.MAX_PER_DATASET.keys())
-            # natural_questions has 287 parquet shards and is too slow for HF Spaces
             datasets = [d for d in datasets if d != "natural_questions"]
 
         total_added = 0
@@ -185,24 +284,79 @@ class DatasetLoader:
         print(f"\nDataset loading complete — {len(self.examples):,} examples ready.")
         return total_added
 
+    def _load_from_hf_dataset_repo(self) -> int:
+        """
+        HF Space startup path:
+        1. Download core datasets immediately (sync)
+        2. Download extended datasets in background (async)
+        3. Return once core datasets are loaded
+        """
+        print(f"Loading from HF Dataset repo: {self.HF_CACHE_REPO}")
+
+        # Get all available files in the dataset repo
+        try:
+            from huggingface_hub import list_repo_files
+            all_files = [
+                f for f in list_repo_files(self.HF_CACHE_REPO, repo_type="dataset")
+                if f.endswith(".json")
+            ]
+            print(f"  Found {len(all_files)} cache files in HF Dataset repo")
+        except Exception as e:
+            print(f"  Could not list HF Dataset repo files: {e}")
+            all_files = self.CORE_DATASETS
+
+        total_added = 0
+
+        # Step 1: Download and load core datasets synchronously
+        print(f"  Loading {len(self.CORE_DATASETS)} core datasets...")
+        for fname in self.CORE_DATASETS:
+            if fname not in all_files:
+                continue
+            if self._download_from_hf_dataset(fname):
+                fpath = os.path.join(self.cache_dir, fname)
+                added = self._load_from_json_file(fpath)
+                total_added += added
+                print(f"    {fname}: +{added:,} (total: {len(self.examples):,})")
+
+        self._update_statistics()
+        self._build_indices()
+        print(f"  Core datasets loaded: {len(self.examples):,} examples ready ✅")
+
+        # Step 2: Download extended datasets in background
+        self._download_extended_in_background(all_files, self.CORE_DATASETS)
+
+        return total_added
+
+    def _load_from_json_file(self, fpath: str) -> int:
+        """Load a single JSON cache file into self.examples."""
+        before = len(self.examples)
+        try:
+            with open(fpath, encoding="utf-8") as f:
+                cached = json.load(f)
+            for ex in cached:
+                try:
+                    diff = DifficultyLevel(ex.get("difficulty", "intermediate"))
+                except ValueError:
+                    diff = DifficultyLevel.INTERMEDIATE
+                self.examples.append(QAExample(
+                    question=ex["question"], context=ex["context"],
+                    answer=ex["answer"], id=ex["id"], source=ex["source"],
+                    difficulty=diff, category=ex.get("category", ""),
+                    hallucination_type=ex.get("hallucination_type"),
+                    entities=ex.get("entities", []),
+                    metadata=ex.get("metadata", {}),
+                ))
+            return len(self.examples) - before
+        except Exception as e:
+            print(f"    Error loading {fpath}: {e}")
+            return 0
+
     def _load_single(self, ds_name: str, cap: int, cache: bool, hf_load) -> int:
         cache_file = os.path.join(self.cache_dir, f"{ds_name}_{cap}.json")
         if cache and os.path.exists(cache_file):
             try:
-                with open(cache_file) as f:
-                    cached = json.load(f)
-                before = len(self.examples)
-                for ex in cached:
-                    self.examples.append(QAExample(
-                        question=ex["question"], context=ex["context"],
-                        answer=ex["answer"], id=ex["id"], source=ex["source"],
-                        difficulty=DifficultyLevel(ex.get("difficulty", "intermediate")),
-                        category=ex.get("category", ""),
-                        hallucination_type=ex.get("hallucination_type"),
-                        entities=ex.get("entities", []),
-                        metadata=ex.get("metadata", {}),
-                    ))
-                return len(self.examples) - before
+                added = self._load_from_json_file(cache_file)
+                return added
             except Exception as e:
                 print(f"  Cache miss for {ds_name} ({e}), re-downloading.")
 
