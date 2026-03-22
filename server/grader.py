@@ -1,16 +1,14 @@
-"""Professional-grade hallucination detection and grading system.
+"""Research-grade hallucination detection and grading system v4.0.
 
-Features:
-- Semantic similarity via sentence-transformers (all-MiniLM-L6-v2) cosine
-  similarity on 384-dim embeddings; falls back to SequenceMatcher when the
-  library is not installed.
-- Contradiction detection using NLI cross-encoder (nli-deberta-v3-small);
-  falls back to negation heuristics.
+Metrics:
+- NLI contradiction detection: cross-encoder/nli-deberta-v3-large (upgraded
+  from small; better accuracy on SNLI/MultiNLI benchmarks)
+- ROUGE-1/2/L: standard summarisation/QA overlap metrics (Lin 2004)
+- BERTScore: contextual embedding similarity via DeBERTa-v3 (Zhang et al. 2020)
+- AlignScore: faithfulness/grounding scorer (Zha et al. ACL 2023)
+- Semantic similarity: all-MiniLM-L6-v2 cosine; falls back to SequenceMatcher
 - Multi-dimensional hallucination classification (8 types, 5 severity levels)
-- Multi-factor reward: factual correctness, source grounding, citation
-  accuracy, confidence calibration, semantic consistency, hallucination penalty
-- Curriculum-aware difficulty bonuses and streak consistency bonuses
-- Comprehensive reward breakdown with explainability
+- Multi-factor reward with curriculum-aware difficulty bonuses
 """
 
 import re
@@ -61,14 +59,132 @@ def _get_nli():
         return _nli_model
     try:
         from sentence_transformers import CrossEncoder
-        _nli_model = CrossEncoder("cross-encoder/nli-deberta-v3-small")
+        _nli_model = CrossEncoder("cross-encoder/nli-deberta-v3-large")
         _nli_available = True
-        logger.info("NLI cross-encoder loaded: nli-deberta-v3-small")
+        logger.info("NLI cross-encoder loaded: cross-encoder/nli-deberta-v3-large")
     except Exception as e:
-        logger.warning(f"NLI cross-encoder not available ({e}); using heuristic fallback")
+        logger.warning(f"NLI cross-encoder (nli-deberta-v3-large) not available ({e}); using heuristic fallback")
         _nli_model = None
         _nli_available = False
     return _nli_model
+
+
+# ── ROUGE scorer ──────────────────────────────────────────────────────────────
+_rouge_scorer = None
+_rouge_available = False
+
+def _get_rouge():
+    global _rouge_scorer, _rouge_available
+    if _rouge_scorer is not None:
+        return _rouge_scorer
+    try:
+        from rouge_score import rouge_scorer as rs
+        _rouge_scorer = rs.RougeScorer(["rouge1", "rouge2", "rougeL"], use_stemmer=True)
+        _rouge_available = True
+        logger.info("ROUGE scorer loaded")
+    except Exception as e:
+        logger.warning(f"rouge-score not available ({e}); ROUGE metrics disabled")
+        _rouge_scorer = None
+        _rouge_available = False
+    return _rouge_scorer
+
+
+def compute_rouge(hypothesis: str, reference: str) -> Dict[str, float]:
+    """Compute ROUGE-1, ROUGE-2, ROUGE-L F1 scores."""
+    scorer = _get_rouge()
+    if scorer is None or not hypothesis or not reference:
+        return {"rouge1": 0.0, "rouge2": 0.0, "rougeL": 0.0}
+    try:
+        scores = scorer.score(reference, hypothesis)
+        return {
+            "rouge1": round(scores["rouge1"].fmeasure, 4),
+            "rouge2": round(scores["rouge2"].fmeasure, 4),
+            "rougeL": round(scores["rougeL"].fmeasure, 4),
+        }
+    except Exception as e:
+        logger.warning(f"ROUGE computation failed: {e}")
+        return {"rouge1": 0.0, "rouge2": 0.0, "rougeL": 0.0}
+
+
+# ── BERTScore ─────────────────────────────────────────────────────────────────
+_bertscore_available = False
+
+def _check_bertscore():
+    global _bertscore_available
+    try:
+        import bert_score  # noqa: F401
+        _bertscore_available = True
+        logger.info("BERTScore available")
+    except Exception:
+        _bertscore_available = False
+    return _bertscore_available
+
+
+def compute_bertscore(hypothesis: str, reference: str) -> Dict[str, float]:
+    """Compute BERTScore P/R/F1 using DeBERTa-v3-base."""
+    if not _bertscore_available and not _check_bertscore():
+        return {"precision": 0.0, "recall": 0.0, "f1": 0.0}
+    if not hypothesis or not reference:
+        return {"precision": 0.0, "recall": 0.0, "f1": 0.0}
+    try:
+        from bert_score import score as bscore
+        P, R, F = bscore(
+            [hypothesis], [reference],
+            model_type="microsoft/deberta-v3-base",
+            lang="en", verbose=False,
+            device="cpu"
+        )
+        return {
+            "precision": round(float(P[0]), 4),
+            "recall":    round(float(R[0]), 4),
+            "f1":        round(float(F[0]), 4),
+        }
+    except Exception as e:
+        logger.warning(f"BERTScore computation failed: {e}")
+        return {"precision": 0.0, "recall": 0.0, "f1": 0.0}
+
+
+# ── AlignScore (faithfulness) ─────────────────────────────────────────────────
+_alignscore_model = None
+_alignscore_available = False
+
+def _get_alignscore():
+    global _alignscore_model, _alignscore_available
+    if _alignscore_model is not None:
+        return _alignscore_model
+    try:
+        from alignscore import AlignScore
+        _alignscore_model = AlignScore(
+            model="roberta-base",
+            batch_size=8,
+            device="cpu",
+            ckpt_path=None,          # uses default checkpoint
+            evaluation_mode="nli_sp"
+        )
+        _alignscore_available = True
+        logger.info("AlignScore loaded (roberta-base, nli_sp)")
+    except Exception as e:
+        logger.warning(f"AlignScore not available ({e}); faithfulness disabled")
+        _alignscore_model = None
+        _alignscore_available = False
+    return _alignscore_model
+
+
+def compute_alignscore(context: str, claim: str) -> float:
+    """
+    Compute AlignScore faithfulness of claim with respect to context.
+    Returns a float in [0, 1] — higher = more faithful/grounded.
+    Falls back to 0.5 (neutral) if AlignScore is not installed.
+    """
+    model = _get_alignscore()
+    if model is None or not context or not claim:
+        return 0.5   # neutral fallback — don't penalise if unavailable
+    try:
+        scores = model.score(contexts=[context], claims=[claim])
+        return round(float(scores[0]), 4)
+    except Exception as e:
+        logger.warning(f"AlignScore inference failed: {e}")
+        return 0.5
 
 
 class HallucinationSeverity(Enum):
@@ -95,7 +211,7 @@ class HallucinationType(Enum):
 
 @dataclass
 class GradingResult:
-    """Comprehensive grading result with all metrics."""
+    """Research-grade grading result with all metrics (v4.0)."""
     # Core scores (0-1)
     factual_correctness: float = 0.0
     source_grounding: float = 0.0
@@ -103,6 +219,15 @@ class GradingResult:
     confidence_calibration: float = 0.0
     semantic_consistency: float = 0.0
     hallucination_score: float = 0.0
+
+    # Research-grade metrics (v4.0)
+    rouge1: float = 0.0
+    rouge2: float = 0.0
+    rougeL: float = 0.0
+    bertscore_f1: float = 0.0
+    bertscore_precision: float = 0.0
+    bertscore_recall: float = 0.0
+    alignscore: float = 0.5          # faithfulness; 0.5 = neutral/unavailable
 
     # Combined reward
     total_reward: float = 0.0
@@ -116,6 +241,8 @@ class GradingResult:
     semantic_analysis: Dict[str, Any] = field(default_factory=dict)
     citation_analysis: Dict[str, Any] = field(default_factory=dict)
     entity_analysis: Dict[str, Any] = field(default_factory=dict)
+    rouge_analysis: Dict[str, Any] = field(default_factory=dict)
+    bertscore_analysis: Dict[str, Any] = field(default_factory=dict)
 
     # Feedback
     feedback: str = ""
@@ -730,16 +857,19 @@ def calculate_reward(
     if recent_rewards is not None and len(recent_rewards) > 0:
         previous_performance = sum(recent_rewards) / len(recent_rewards)
 
-    # Default weights - tuned for proper reward calibration
-    # Grounded correct answers should receive 0.6+ rewards
+    # Default weights — tuned for research-grade reward calibration (v4.0)
+    # New metrics (ROUGE, BERTScore, AlignScore) augment existing components
     if reward_weights is None:
         reward_weights = {
-            "factual_correctness": 0.35,   # Primary signal
-            "source_grounding": 0.30,      # Critical for hallucination prevention
-            "citation_accuracy": 0.15,     # Verify quotes are in context
-            "confidence_calibration": 0.10, # Calibrate confidence to accuracy
-            "semantic_consistency": 0.05,  # Semantic coherence
-            "hallucination_penalty": 0.05, # Penalty for fabricated content
+            "factual_correctness":   0.30,  # Primary signal
+            "source_grounding":      0.25,  # Critical for hallucination prevention
+            "citation_accuracy":     0.10,  # Verify quotes are in context
+            "confidence_calibration": 0.08, # Calibrate confidence to accuracy
+            "semantic_consistency":  0.07,  # NLI-based semantic coherence
+            "hallucination_penalty": 0.05,  # Penalty for fabricated content
+            "rouge_score":           0.05,  # ROUGE-L overlap
+            "bertscore":             0.05,  # Contextual embedding similarity
+            "alignscore":            0.05,  # Faithfulness / grounding
         }
 
     # Component 1: Factual correctness
@@ -761,18 +891,36 @@ def calculate_reward(
 
     hallucination_penalty_score = 1.0 - hallucination_score
 
+    # Component 7: ROUGE (answer vs ground_truth overlap)
+    rouge_scores = compute_rouge(answer, ground_truth)
+    rouge_combined = (
+        0.2 * rouge_scores["rouge1"] +
+        0.3 * rouge_scores["rouge2"] +
+        0.5 * rouge_scores["rougeL"]
+    )
+
+    # Component 8: BERTScore (contextual semantic similarity)
+    bs_scores = compute_bertscore(answer, ground_truth)
+    bertscore_f1 = bs_scores["f1"]
+
+    # Component 9: AlignScore (answer faithfulness to context)
+    align_score = compute_alignscore(context, answer)
+
     # Factual correctness gate: if answer is factually wrong, cap the reward
     # This prevents high rewards for well-grounded but incorrect answers
     factual_cap = correctness  # Wrong answers can't score higher than their correctness
 
-    # Calculate base reward
+    # Calculate base reward (v4.0 — includes ROUGE, BERTScore, AlignScore)
     base_reward = (
-        reward_weights["factual_correctness"] * correctness +
-        reward_weights["source_grounding"] * min(grounding_score, factual_cap) +
-        reward_weights["citation_accuracy"] * min(citation_analysis.get("best_match_score", 0.0), factual_cap) +
+        reward_weights["factual_correctness"]   * correctness +
+        reward_weights["source_grounding"]      * min(grounding_score, factual_cap) +
+        reward_weights["citation_accuracy"]     * min(citation_analysis.get("best_match_score", 0.0), factual_cap) +
         reward_weights["confidence_calibration"] * calibration_score +
-        reward_weights["semantic_consistency"] * min(semantic_score, factual_cap) +
-        reward_weights["hallucination_penalty"] * hallucination_penalty_score
+        reward_weights["semantic_consistency"]  * min(semantic_score, factual_cap) +
+        reward_weights["hallucination_penalty"] * hallucination_penalty_score +
+        reward_weights.get("rouge_score",  0.05) * min(rouge_combined, factual_cap) +
+        reward_weights.get("bertscore",    0.05) * min(bertscore_f1, factual_cap) +
+        reward_weights.get("alignscore",   0.05) * min(align_score, factual_cap)
     )
 
     # Difficulty bonus
@@ -796,7 +944,7 @@ def calculate_reward(
     # Determine if hallucination occurred
     is_hallucination = hallucination_score > 0.5
 
-    # Build comprehensive info dict
+    # Build comprehensive info dict (v4.0)
     info = {
         # Core scores
         "correctness": correctness,
@@ -805,6 +953,12 @@ def calculate_reward(
         "semantic_consistency": semantic_score,
         "hallucination_score": hallucination_score,
         "hallucination_penalty": hallucination_penalty_score,
+
+        # Research-grade metrics (v4.0)
+        "rouge": rouge_scores,
+        "rouge_combined": round(rouge_combined, 4),
+        "bertscore": bs_scores,
+        "alignscore": align_score,
 
         # Classification
         "is_hallucination": is_hallucination,
@@ -819,12 +973,15 @@ def calculate_reward(
 
         # Component contributions
         "components": {
-            "correctness_contrib": reward_weights["factual_correctness"] * correctness,
-            "grounding_contrib": reward_weights["source_grounding"] * grounding_score,
-            "citation_contrib": reward_weights["citation_accuracy"] * citation_analysis.get("best_match_score", 0.0),
-            "calibration_contrib": reward_weights["confidence_calibration"] * calibration_score,
-            "semantic_contrib": reward_weights["semantic_consistency"] * semantic_score,
-            "hallucination_contrib": reward_weights["hallucination_penalty"] * hallucination_penalty_score,
+            "correctness_contrib":    reward_weights["factual_correctness"]   * correctness,
+            "grounding_contrib":      reward_weights["source_grounding"]      * grounding_score,
+            "citation_contrib":       reward_weights["citation_accuracy"]     * citation_analysis.get("best_match_score", 0.0),
+            "calibration_contrib":    reward_weights["confidence_calibration"] * calibration_score,
+            "semantic_contrib":       reward_weights["semantic_consistency"]  * semantic_score,
+            "hallucination_contrib":  reward_weights["hallucination_penalty"] * hallucination_penalty_score,
+            "rouge_contrib":          reward_weights.get("rouge_score", 0.05) * rouge_combined,
+            "bertscore_contrib":      reward_weights.get("bertscore",   0.05) * bertscore_f1,
+            "alignscore_contrib":     reward_weights.get("alignscore",  0.05) * align_score,
         },
 
         # Detailed analyses
