@@ -22,7 +22,7 @@ tags:
 [![OpenEnv](https://img.shields.io/badge/OpenEnv-Compatible-blue)](https://github.com/meta-pytorch/OpenEnv)
 [![PyPI](https://img.shields.io/pypi/v/openenv-halluguard)](https://pypi.org/project/openenv-halluguard/)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
-[![Dataset](https://img.shields.io/badge/Dataset-100K%2B_examples-orange)](#datasets)
+[![Dataset](https://img.shields.io/badge/Dataset-1M%2B_examples-orange)](#datasets)
 
 ---
 
@@ -204,25 +204,45 @@ reward = clamp(Σ(weight × score) × difficulty_multiplier + consistency_bonus,
 
 ## 📚 Datasets
 
-**100,033 total examples** loaded at runtime across 15 real-world datasets:
+**1,090,163 total examples** loaded at runtime across 38 real-world QA datasets:
 
-| Source | Examples | Type |
+| Source | Examples | Domain |
 |---|---|---|
-| SQuAD | 10,000 | Reading comprehension |
-| TriviaQA | 10,000 | Open-domain factual QA |
-| HaluEval | 5,000 | Hallucination evaluation |
-| TruthfulQA | 817 | Factuality benchmark |
-| HotpotQA | 10,000 | Multi-hop reasoning |
-| BoolQ | 9,427 | Boolean QA |
-| FaithDial | 9,945 | Faithful dialogue |
-| FEVER | 3,048 | Fact verification |
-| ARC | 2,590 | Science QA |
-| OpenBookQA | 4,957 | Common knowledge |
-| MS MARCO | 6,050 | Web QA |
+| SQuAD + SQuAD-v2 | 100,000 | Reading comprehension |
+| TriviaQA | 50,000 | Open-domain factual QA |
+| HotpotQA | 50,000 | Multi-hop reasoning |
+| DROP | 50,000 | Numerical reasoning |
+| RACE | 50,000 | Exam reading comprehension |
+| NewsQA | 50,000 | News article QA |
+| FaithDial | 49,649 | Faithful dialogue |
+| FEVER / SNLI | 49,947 | Fact verification |
+| NQ Open | 50,000 | Natural questions |
+| AQUA-RAT | 97,467 | Math word problems |
+| XSum | 49,994 | Extreme summarisation |
+| CNN/DailyMail | 50,000 | News summarisation |
+| HellaSwag | 39,905 | Commonsense completion |
+| AdversarialQA | 30,000 | Adversarial reading comprehension |
+| WinoGrande | 40,398 | Commonsense inference |
+| CommonsenseQA | 9,741 | Commonsense reasoning |
+| BoolQ | 9,427 | Boolean yes/no QA |
 | CoQA | 7,199 | Conversational QA |
-| NQ Open | 8,000 | Natural questions |
-| CommonsenseQA | 8,000 | Commonsense reasoning |
-| WinoGrande | 5,000 | Commonsense inference |
+| MedQA | 10,000 | Medical licensing exam |
+| MedMCQA | 20,000 | Medical entrance exam |
+| SciTail | 23,596 | Science entailment |
+| HaluEval | 10,000 | Hallucination evaluation |
+| TruthfulQA | 817 | Factuality benchmark |
+| QASC | 8,134 | Multi-hop science |
+| QUAIL | 10,246 | Reading comprehension |
+| SciQ | 11,679 | Science QA |
+| Circa | 31,525 | Social context QA |
+| ARC | 2,590 | Science exam |
+| OpenBookQA | 4,957 | Common knowledge |
+| AG News | 50,000 | News classification |
+| QuaRTz | 2,696 | Qualitative science |
+| Climate-FEVER | 881 | Climate fact verification |
+| PubMedQA | 1,000 | Biomedical QA |
+| Medical QA Pairs | 3,000 | Medical question similarity |
+| MS MARCO | 30,568 | Web search QA |
 
 ### Add Custom Datasets
 
@@ -335,7 +355,7 @@ hallucination_guard_env/
 | **Solves the #1 LLM problem** | Hallucination is the most critical reliability issue in production AI |
 | **Novel** | First OpenEnv environment targeting hallucination and grounding |
 | **Rich reward signal** | 6-component system gives models precise, actionable feedback |
-| **100,033 diverse examples** | 15 real-world datasets including SQuAD, HaluEval, TruthfulQA, HotpotQA |
+| **1,090,163 diverse examples** | 15 real-world datasets including SQuAD, HaluEval, TruthfulQA, HotpotQA |
 | **Model-agnostic** | Works with GPT-4, Claude, Llama, Mistral, or any LLM |
 | **PyPI package** | `pip install openenv-halluguard` for instant SDK access |
 | **Production-ready** | NLI grader, session management, metrics, caching, Dockerfile |
