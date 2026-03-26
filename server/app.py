@@ -65,10 +65,24 @@ Built on 1,000,000+ examples across 38 real-world QA datasets:
 SQuAD · TriviaQA · HaluEval · TruthfulQA · HotpotQA · BoolQ · HH-RLHF ·
 NQ Open · CommonsenseQA · WinoGrande · CoQA · OpenBookQA · MS MARCO · ARC · Medical QA
 
-### Quick Start
+### PyPI Package
+
+```bash
+pip install openenv-halluguard
+```
 
 ```python
-pip install requests
+from hallucination_guard_env import HallucinationEnv, HallucinationAction
+
+env = HallucinationEnv()
+obs = env.reset()
+result = env.step(HallucinationAction(answer="your answer", confidence=0.8))
+print(f"Reward: {result.reward}, Hallucinated: {result.is_hallucination}")
+```
+
+### Quick Start (HTTP)
+
+```python
 import requests
 
 BASE = "https://samsankar-hallucination-guard-env.hf.space"
@@ -79,7 +93,7 @@ print(obs["question"], obs["context"])
 
 # 2. Answer from context only
 result = requests.post(f"{BASE}/step", json={"answer": "your answer"}).json()
-print(result["reward"], result["is_hallucination"])
+print(f"Reward: {result['reward']}, Hallucinated: {result['is_hallucination']}")
 ```
 
 ### OpenEnv Required Endpoints
@@ -90,7 +104,12 @@ print(result["reward"], result["is_hallucination"])
 | `/grader` | POST | Score a completed episode (0.0–1.0) |
 | `/baseline` | POST | Run built-in baseline agent across all tasks |
 
-### HallucinationGuard - [Website](https://huggingface.co/spaces/SamSankar/hallucination-guard-env) · [PyPI](https://pypi.org/project/openenv-halluguard/) · [Docs](https://samsankar-hallucination-guard-env.hf.space/docs)
+### Links
+
+- **HuggingFace Space**: https://huggingface.co/spaces/SamSankar/hallucination-guard-env
+- **PyPI Package**: https://pypi.org/project/openenv-halluguard/
+- **Interactive Docs**: https://samsankar-hallucination-guard-env.hf.space/docs
+- **Leaderboard**: https://samsankar-hallucination-guard-env.hf.space/leaderboard
     """,
     version="4.1.0",
     contact={"name": "HallucinationGuard", "url": "https://huggingface.co/spaces/SamSankar/hallucination-guard-env"},
@@ -627,7 +646,7 @@ async def run_baseline(body: Dict[str, Any] = {}):
 
 @app.get("/health", summary="Health check", tags=["Info"])
 async def health():
-    return {"status": "healthy", "service": "HallucinationGuard-Env", "version": "4.1.0"}
+    return {"status": "healthy", "service": "HallucinationGuard-Env", "version": "4.1.0", "pypi_package": "openenv-halluguard", "pypi_version": "2.0.1"}
 
 
 @app.get("/environment/info", summary="Full environment spec", tags=["Info"])
@@ -636,6 +655,11 @@ async def env_info():
         "name":    "HallucinationGuard-Env",
         "version": "4.1.0",
         "description": "Production RL environment for hallucination detection & prevention",
+        "pypi": {
+            "package": "openenv-halluguard",
+            "version": "2.0.1",
+            "install": "pip install openenv-halluguard",
+        },
         "datasets": {
             "count": 38,
             "total_examples": "1,090,163",
