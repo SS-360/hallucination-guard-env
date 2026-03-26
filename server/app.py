@@ -220,13 +220,6 @@ async def step(action_data: Dict[str, Any]):
     try:
         env = _get_default_env()
         valid = {f.name for f in dataclasses.fields(HallucinationAction)}
-        # Strip <think> blocks from Nemotron 3 Super and reasoning models
-        if "answer" in action_data:
-            from server.grader import _strip_thinking
-            action_data = dict(action_data)
-            action_data["answer"] = _strip_thinking(action_data["answer"])
-            if "source_quote" in action_data:
-                action_data["source_quote"] = _strip_thinking(action_data["source_quote"])
         action = HallucinationAction(**{k: v for k, v in action_data.items() if k in valid})
         obs = env.step(action)
         return JSONResponse(content=_safe_dict(obs))
