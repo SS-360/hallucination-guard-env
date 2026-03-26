@@ -1,12 +1,16 @@
 """
-HallucinationGuard-Env v4.0 — Production FastAPI Server
+HallucinationGuard-Env v4.1 — Production FastAPI Server
 
 Endpoints:
-  Standard  : POST /reset  POST /step  GET /state  GET /health
-  Session   : POST /session/reset  POST /session/step  DELETE /session
+  Standard   : POST /reset  POST /step  GET /state  GET /health
+  Session    : POST /session/reset  POST /session/step  DELETE /session
   Leaderboard: GET /leaderboard  POST /leaderboard/submit  DELETE /leaderboard/{model}
-  Info      : GET /  GET /docs  GET /environment/info  GET /datasets
-              GET /metrics  GET /metrics/summary
+  Info       : GET /  GET /docs  GET /environment/info  GET /datasets
+               GET /metrics  GET /metrics/summary
+  ── OpenEnv Required ──────────────────────────────────────────────────────
+  Tasks      : GET  /tasks                    ← list tasks + action schema
+  Grader     : POST /grader                   ← score a completed episode
+  Baseline   : POST /baseline                 ← run baseline agent, return scores
 """
 
 import sys, os, uuid, logging, dataclasses, enum, time
@@ -22,6 +26,15 @@ from typing import Dict, Any, Optional, List
 from models import HallucinationAction, HallucinationObservation, HallucinationState
 from environment import HallucinationEnvironment
 from metrics import get_tracker
+
+# ── NEW: task registry import ─────────────────────────────────────────────────
+from tasks import (
+    ALL_TASKS,
+    get_task,
+    task_id_for_difficulty,
+    compute_task_score,
+    ACTION_SCHEMA,
+)
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -44,7 +57,7 @@ app = FastAPI(
     lifespan=lifespan,
     title="HallucinationGuard-Env",
     description="""
-## 🛡️ HallucinationGuard-Env v4.0
+## 🛡️ HallucinationGuard-Env v4.1
 
 **The production-grade OpenEnv RL environment for training and evaluating LLMs on hallucination avoidance.**
 
@@ -69,19 +82,17 @@ result = requests.post(f"{BASE}/step", json={"answer": "your answer"}).json()
 print(result["reward"], result["is_hallucination"])
 ```
 
-### Python SDK
+### OpenEnv Required Endpoints
 
-```python
-pip install openenv-halluguard
-from openenv_halluguard import HallucinationGuardEnv
-env = HallucinationGuardEnv()
-results = env.evaluate(your_model_fn, episodes=5)
-env.print_report(results)
-```
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/tasks` | GET | List all 3 tasks and the action schema |
+| `/grader` | POST | Score a completed episode (0.0–1.0) |
+| `/baseline` | POST | Run built-in baseline agent across all tasks |
 
 ### HallucinationGuard - [Website](https://huggingface.co/spaces/SamSankar/hallucination-guard-env) · [PyPI](https://pypi.org/project/openenv-halluguard/) · [Docs](https://samsankar-hallucination-guard-env.hf.space/docs)
     """,
-    version="4.0.0",
+    version="4.1.0",
     contact={"name": "HallucinationGuard", "url": "https://huggingface.co/spaces/SamSankar/hallucination-guard-env"},
     license_info={"name": "MIT"},
 )
@@ -331,31 +342,322 @@ async def remove_from_leaderboard(model_name: str):
     return {"status": "removed", "model_name": model_name}
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# ── OPENENV REQUIRED ENDPOINTS ─────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get(
+    "/tasks",
+    summary="List all tasks and the action schema",
+    tags=["OpenEnv"],
+    response_description=(
+        "Array of task objects. Each object contains task_id, name, description, "
+        "difficulty, datasets, and the full action_schema (JSON Schema) that "
+        "describes every field an agent can send to POST /step."
+    ),
+)
+async def list_tasks():
+    """
+    ## OpenEnv required endpoint — GET /tasks
+
+    Returns all 3 tasks in difficulty order (easy → medium → hard) and the
+    complete action schema that governs what an agent must include in each
+    `POST /step` call.
+
+    ### Tasks
+    | task_id | difficulty | primary datasets |
+    |---------|-----------|-----------------|
+    | `task_1_factual_grounding` | beginner | SQuAD, BoolQ, ARC |
+    | `task_2_multi_hop_synthesis` | intermediate | HotpotQA, CoQA, NQ-Open |
+    | `task_3_adversarial_resistance` | advanced | HaluEval, TruthfulQA, FEVER |
+    """
+    ordered = ["task_1_factual_grounding", "task_2_multi_hop_synthesis",
+               "task_3_adversarial_resistance"]
+    tasks_list = [ALL_TASKS[tid].to_dict() for tid in ordered if tid in ALL_TASKS]
+    return {
+        "tasks": tasks_list,
+        "total": len(tasks_list),
+        "action_schema": ACTION_SCHEMA,
+        "notes": (
+            "Run POST /reset with {\"difficulty\": \"<difficulty>\"} to start an episode "
+            "for a specific task. Then call POST /step with the action schema fields. "
+            "Use POST /grader to score the completed episode."
+        ),
+    }
+
+
+@app.post(
+    "/grader",
+    summary="Score a completed episode (0.0 – 1.0)",
+    tags=["OpenEnv"],
+    response_description=(
+        "task_id, score (0.0–1.0), breakdown of component scores, "
+        "and episode metadata."
+    ),
+)
+async def grade_episode(body: Dict[str, Any]):
+    """
+    ## OpenEnv required endpoint — POST /grader
+
+    Computes a deterministic score in **[0.0, 1.0]** for a completed episode.
+
+    ### Body
+    ```json
+    {
+        "task_id": "task_1_factual_grounding",
+        "step_rewards": [0.82, 0.55, 0.91, 0.43, 0.78],
+        "step_infos": [
+            {
+                "correctness": 0.9, "grounding": 0.8,
+                "calibration": 0.7, "hallucination_score": 0.1,
+                "is_hallucination": false
+            }
+        ]
+    }
+    ```
+
+    `step_rewards` and `step_infos` are the per-step values returned by
+    `POST /step` during the episode.
+    If you only have `step_rewards` (no `step_infos`), the grader falls back
+    to using the mean reward as the score.
+
+    ### Scoring
+
+    Each task uses task-specific weights across four components:
+    - **Factual correctness** (highest weight for beginner tasks)
+    - **Source grounding** (citation accuracy)
+    - **Confidence calibration** (lower weight for beginner, higher for adversarial)
+    - **Hallucination penalty** (highest weight for adversarial task)
+
+    A **completion bonus** of +0.05 is applied to full episodes (≥ 5 steps).
+    """
+    task_id = body.get("task_id")
+    if not task_id:
+        raise HTTPException(status_code=422, detail="'task_id' is required.")
+
+    task = get_task(task_id)
+    if task is None:
+        valid_ids = list(ALL_TASKS.keys())
+        raise HTTPException(
+            status_code=404,
+            detail=f"task_id '{task_id}' not found. Valid values: {valid_ids}",
+        )
+
+    step_rewards: List[float] = body.get("step_rewards", [])
+    step_infos: List[Dict[str, Any]] = body.get("step_infos", [])
+
+    if not isinstance(step_rewards, list):
+        raise HTTPException(status_code=422, detail="'step_rewards' must be a list of floats.")
+
+    # Fallback: if no step_infos provided, use mean reward directly
+    if not step_infos and step_rewards:
+        mean_reward = sum(step_rewards) / len(step_rewards)
+        return {
+            "task_id": task_id,
+            "score": round(min(1.0, max(0.0, mean_reward)), 4),
+            "breakdown": {"mean_reward": round(mean_reward, 4)},
+            "metadata": {
+                "task_id": task.task_id,
+                "difficulty": task.difficulty,
+                "steps": len(step_rewards),
+                "note": "Scored from step_rewards only (no step_infos provided).",
+            },
+        }
+
+    result = compute_task_score(task, step_rewards, step_infos)
+    return result
+
+
+@app.post(
+    "/baseline",
+    summary="Run baseline agent across all 3 tasks",
+    tags=["OpenEnv"],
+    response_description=(
+        "Per-task baseline scores plus an aggregate summary. "
+        "Uses a simple heuristic agent (no LLM API required)."
+    ),
+)
+async def run_baseline(body: Dict[str, Any] = {}):
+    """
+    ## OpenEnv required endpoint — POST /baseline
+
+    Runs the built-in **heuristic baseline agent** across all 3 tasks and
+    returns reproducible scores.  No external API key is required — the agent
+    uses deterministic context-extraction heuristics.
+
+    ### Optional body params
+    | field | default | description |
+    |-------|---------|-------------|
+    | `steps_per_task` | `5` | Questions per task episode (min 3, max 10) |
+    | `seed` | `42` | Random seed for reproducibility |
+    | `model` | `"heuristic_baseline"` | Label to record in results |
+
+    ### What the heuristic baseline does
+    1. Extracts the first sentence of the context as the answer.
+    2. Sets confidence to 0.6.
+    3. Uses the first 80 characters of the context as the source quote.
+
+    This is intentionally weak — it establishes a reproducible **floor** that
+    any real LLM should beat. Expected scores:
+
+    | Task | Expected baseline score |
+    |------|------------------------|
+    | task_1_factual_grounding | 0.35 – 0.50 |
+    | task_2_multi_hop_synthesis | 0.25 – 0.40 |
+    | task_3_adversarial_resistance | 0.15 – 0.30 |
+
+    To run a real LLM baseline instead, use `run_baseline.py`.
+    """
+    steps_per_task: int = max(3, min(10, int(body.get("steps_per_task", 5))))
+    seed: int = int(body.get("seed", 42))
+    model_label: str = str(body.get("model", "heuristic_baseline"))
+
+    task_order = [
+        ("task_1_factual_grounding",      "beginner"),
+        ("task_2_multi_hop_synthesis",    "intermediate"),
+        ("task_3_adversarial_resistance", "advanced"),
+    ]
+
+    results: List[Dict[str, Any]] = []
+    all_rewards: List[float] = []
+    all_hallucination_flags: List[bool] = []
+    total_steps = 0
+
+    for task_id, difficulty in task_order:
+        task = get_task(task_id)
+        if task is None:
+            continue
+
+        # Create an isolated session for this task
+        session_id = f"baseline_{task_id}_{seed}"
+        if session_id in _sessions:
+            _sessions[session_id].close()
+        _sessions[session_id] = HallucinationEnvironment(session_id=session_id)
+
+        try:
+            obs_raw = _sessions[session_id].reset(
+                seed=seed, difficulty=difficulty
+            )
+            obs = _safe_dict(obs_raw)
+        except Exception as e:
+            logger.warning(f"Baseline reset failed for {task_id}: {e}")
+            results.append({"task_id": task_id, "score": 0.0, "error": str(e)})
+            continue
+
+        step_rewards: List[float] = []
+        step_infos: List[Dict[str, Any]] = []
+
+        for _ in range(steps_per_task):
+            if obs.get("done", False):
+                break
+
+            # ── Heuristic baseline agent ──────────────────────────────────
+            context: str = obs.get("context", "")
+            sentences = [s.strip() for s in context.replace("\n", " ").split(".") if s.strip()]
+            answer = sentences[0] if sentences else context[:100]
+            source_quote = context[:80] if context else ""
+            confidence = 0.6
+            # ─────────────────────────────────────────────────────────────
+
+            valid = {f.name for f in dataclasses.fields(HallucinationAction)}
+            action = HallucinationAction(
+                answer=answer,
+                confidence=confidence,
+                source_quote=source_quote,
+            )
+
+            try:
+                obs_raw = _sessions[session_id].step(action)
+                obs = _safe_dict(obs_raw)
+            except Exception as e:
+                logger.warning(f"Baseline step failed for {task_id}: {e}")
+                break
+
+            reward = obs.get("reward") or 0.0
+            step_rewards.append(float(reward))
+            step_infos.append({
+                "correctness":        obs.get("grounding_score", 0.0),
+                "grounding":          obs.get("grounding_score", 0.0),
+                "calibration":        0.5,  # heuristic agent has no calibration signal
+                "hallucination_score": 1.0 if obs.get("is_hallucination") else 0.0,
+                "is_hallucination":   bool(obs.get("is_hallucination", False)),
+            })
+            all_hallucination_flags.append(bool(obs.get("is_hallucination", False)))
+            total_steps += 1
+
+        # Grade this task
+        grade = compute_task_score(task, step_rewards, step_infos)
+        grade["model"] = model_label
+        grade["seed"]  = seed
+        results.append(grade)
+        all_rewards.extend(step_rewards)
+
+        # Cleanup session
+        try:
+            _sessions[session_id].close()
+            del _sessions[session_id]
+        except Exception:
+            pass
+
+    # Aggregate summary
+    overall_score = sum(r.get("score", 0.0) for r in results) / max(len(results), 1)
+    hallucination_rate = sum(all_hallucination_flags) / max(len(all_hallucination_flags), 1)
+    avg_reward = sum(all_rewards) / max(len(all_rewards), 1)
+
+    return {
+        "model": model_label,
+        "seed": seed,
+        "steps_per_task": steps_per_task,
+        "tasks": results,
+        "summary": {
+            "overall_score":     round(overall_score, 4),
+            "avg_reward":        round(avg_reward, 4),
+            "hallucination_rate": round(hallucination_rate, 4),
+            "total_steps":       total_steps,
+            "total_tasks":       len(results),
+        },
+        "note": (
+            "These are heuristic baseline scores. Run run_baseline.py with "
+            "OPENAI_API_KEY set to benchmark a real LLM."
+        ),
+    }
+
+
 # ── Info & metrics ─────────────────────────────────────────────────────────────
 
 @app.get("/health", summary="Health check", tags=["Info"])
 async def health():
-    return {"status": "healthy", "service": "HallucinationGuard-Env", "version": "4.0.0"}
+    return {"status": "healthy", "service": "HallucinationGuard-Env", "version": "4.1.0"}
 
 
 @app.get("/environment/info", summary="Full environment spec", tags=["Info"])
 async def env_info():
     return {
         "name":    "HallucinationGuard-Env",
-        "version": "4.0.0",
+        "version": "4.1.0",
         "description": "Production RL environment for hallucination detection & prevention",
         "datasets": {
-            "count": 15,
-            "total_examples": "1,000,000+",
+            "count": 38,
+            "total_examples": "1,090,163",
             "sources": [
-                "squad", "trivia_qa", "halueval", "truthful_qa",
+                "squad", "squad_v2", "trivia_qa", "halueval", "truthful_qa",
                 "hotpotqa", "boolq", "faithdial", "fever", "arc",
                 "openbookqa", "ms_marco", "coqa", "nq_open",
-                "commonsense_qa", "winogrande",
+                "commonsense_qa", "winogrande", "drop", "race", "newsqa",
+                "hellaswag", "adversarial_qa", "ag_news", "aqua_rat", "circa",
+                "climate_fever", "cnn_dailymail", "medqa", "medmcqa",
+                "medical_questions", "pubmedqa", "qasc", "quartz", "quail",
+                "sciq", "scitail", "xsum",
             ],
+        },
+        "tasks": {
+            "count": 3,
+            "ids": list(ALL_TASKS.keys()),
+            "endpoint": "/tasks",
         },
         "endpoints": {
             "environment": ["/reset", "/step", "/state"],
+            "openenv":     ["/tasks", "/grader", "/baseline"],
             "sessions":    ["/session/reset", "/session/step", "/session/list", "/session"],
             "leaderboard": ["/leaderboard", "/leaderboard/submit"],
             "info":        ["/health", "/environment/info", "/datasets", "/metrics"],
@@ -365,6 +667,7 @@ async def env_info():
             "fabricated_fact", "false_citation", "overconfident_wrong",
             "context_drift", "numerical_fabrication", "entity_confusion",
         ],
+        "reward_components": 9,
         "reward_range":    [-1.0, 1.0],
         "supported_frameworks": ["OpenAI Gym", "OpenEnv", "custom Python", "REST API"],
     }
