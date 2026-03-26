@@ -50,18 +50,19 @@ pip install openenv-halluguard
 ```
 
 ```python
-from openenv_halluguard import HallucinationGuardEnv
+from hallucination_guard_env import HallucinationEnv
 
 # Define your model
 def my_model(question, context):
     # Call your LLM here — answer from context only
     return "your answer based on context"
 
-# Evaluate in 3 lines
-env = HallucinationGuardEnv()
-results = env.evaluate(my_model, episodes=5, model_name="my-model")
-env.print_report(results)
-env.submit_to_leaderboard(results, organization="MyCompany")
+# Evaluate in 5 lines
+env = HallucinationEnv()
+obs = env.reset()
+action = my_model(obs.question, obs.context)
+result = env.step(answer=action, confidence=0.8)
+print(f"Reward: {result.reward}, Hallucinated: {result.is_hallucination}")
 ```
 
 ### Raw HTTP
@@ -77,7 +78,7 @@ print(obs["question"], obs["context"])
 
 # 2. Answer from context only
 result = requests.post(f"{BASE}/step", json={"answer": "your answer"}).json()
-print(result["reward"], result["is_hallucination"])
+print(f"Reward: {result['reward']}, Hallucinated: {result['is_hallucination']}")
 
 # 3. View leaderboard
 print(requests.get(f"{BASE}/leaderboard").json())
@@ -388,7 +389,7 @@ The environment adapts difficulty in real-time using an ELO-style skill rating:
 ## 🔌 Works With Any LLM
 
 ```python
-from openenv_halluguard import HallucinationGuardEnv
+from hallucination_guard_env import HallucinationEnv, HallucinationAction
 
 # OpenAI GPT-4
 import openai
@@ -430,10 +431,12 @@ def ollama(question, context):
                        "prompt": f"Context: {context}\n\nQ: {question}\n\nAnswer from context only."})
     return r.json()["response"]
 
-# Evaluate and submit to leaderboard
-env = HallucinationGuardEnv()
-results = env.evaluate(gpt4, episodes=10, model_name="gpt-4o")
-env.submit_to_leaderboard(results, organization="OpenAI")
+# Evaluate
+env = HallucinationEnv()
+obs = env.reset()
+answer = gpt4(obs.question, obs.context)
+result = env.step(HallucinationAction(answer=answer, confidence=0.8))
+print(f"Reward: {result.reward}, Hallucinated: {result.is_hallucination}")
 ```
 
 ---
