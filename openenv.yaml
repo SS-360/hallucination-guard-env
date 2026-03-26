@@ -4,34 +4,65 @@ description: |
   ONLY from verified context documents — penalizing hallucination and
   rewarding factual grounding.
 
-  v4.0: 1,090,163 examples across 38 real-world datasets spanning QA,
+  v4.1: 1,090,163 examples across 38 real-world datasets spanning QA,
   medical, math, science, news, and summarisation domains.
 
-  Inspired by real experiences with AI hallucination during research,
-  this environment helps train more reliable and trustworthy AI systems.
+  9-component reward system: factual correctness · source grounding ·
+  citation accuracy · confidence calibration · semantic consistency ·
+  hallucination penalty · ROUGE · BERTScore · AlignScore.
 
-version: 4.0.0
+  Three tasks (easy → medium → hard) with deterministic per-episode graders.
+
+version: 4.1.0
 author: community
 license: MIT
 
 # OpenEnv configuration
 openenv:
-  # Environment type
   env_type: custom
 
-  # Server configuration
   server:
     port: 8000
     host: 0.0.0.0
 
-  # Environment parameters
   parameters:
     max_questions: 10
 
-  # Entry points
+  # Required OpenEnv endpoints
+  required_endpoints:
+    tasks:    GET  /tasks
+    grader:   POST /grader
+    baseline: POST /baseline
+
   entry_points:
     server: server.app:app
     client: client:HallucinationClient
+
+# Tasks (easy → medium → hard)
+tasks:
+  - id: task_1_factual_grounding
+    name: Factual Grounding
+    difficulty: beginner
+    datasets: [squad, squad_v2, boolq, openbookqa, arc]
+    description: >
+      Answer straightforward factual questions from a short context passage.
+      Single-hop retrieval only. Grader rewards correct citation.
+
+  - id: task_2_multi_hop_synthesis
+    name: Multi-Hop Synthesis
+    difficulty: intermediate
+    datasets: [hotpotqa, coqa, nq_open, ms_marco, newsqa]
+    description: >
+      Synthesise evidence from multiple context sentences to form an answer.
+      Fabricated bridge facts are penalised as hallucinations.
+
+  - id: task_3_adversarial_resistance
+    name: Adversarial Hallucination Resistance
+    difficulty: advanced
+    datasets: [halueval, truthful_qa, fever, climate_fever, adversarial_qa]
+    description: >
+      Resist adversarially-crafted prompts designed to elicit hallucinations.
+      Many questions are unanswerable from context; confident refusals score well.
 
 # Dependencies
 dependencies:
@@ -39,6 +70,7 @@ dependencies:
   - fastapi>=0.100.0
   - uvicorn>=0.23.0
   - requests>=2.31.0
+  - openai>=1.0.0
 
 # Tags for discovery
 tags:
@@ -47,8 +79,10 @@ tags:
   - grounded-generation
   - fact-checking
   - rl-environment
+  - curriculum-learning
+  - adversarial-robustness
 
-# Dataset info
+# All 38 datasets
 datasets:
   - squad
   - squad_v2
