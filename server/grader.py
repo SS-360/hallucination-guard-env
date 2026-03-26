@@ -70,6 +70,25 @@ def _get_nli():
 # ── ROUGE scorer ──────────────────────────────────────────────────────────────
 _rouge_scorer = None
 
+# ── Nemotron / reasoning model support ────────────────────────────────────────
+import re as _re
+
+def _strip_thinking(text: str) -> str:
+    """
+    Strip reasoning traces from Nemotron 3 Super and other chain-of-thought
+    models before grading the actual answer.
+    Handles: <think>, <reasoning>, and similar tags.
+    """
+    if not text:
+        return text
+    text = _re.sub(r"<think>.*?</think>", "", text, flags=_re.DOTALL | _re.IGNORECASE)
+    text = _re.sub(r"<reasoning>.*?</reasoning>", "", text, flags=_re.DOTALL | _re.IGNORECASE)
+    text = _re.sub(r"<reflection>.*?</reflection>", "", text, flags=_re.DOTALL | _re.IGNORECASE)
+    text = text.strip()
+    return text.strip()
+
+
+
 def _get_rouge():
     global _rouge_scorer
     if _rouge_scorer is not None:
@@ -145,6 +164,7 @@ _alignscore_model = None
 _alignscore_checked = False
 
 def _get_alignscore():
+    """AlignScore is optional — gracefully disabled if not installed."""
     global _alignscore_model, _alignscore_checked
     if _alignscore_checked:
         return _alignscore_model
@@ -153,83 +173,28 @@ def _get_alignscore():
         from alignscore import AlignScore
         _alignscore_model = AlignScore(
             model="roberta-base", batch_size=8,
-            device="cpu", ckpt_path=None,
-            evaluation_mode="nli_sp"
+            device="cuda" if _torch_available() else "cpu",
+            alignment_type="bin",
         )
-        logger.info("AlignScore loaded (roberta-base, nli_sp)")
-    except Exception as e:
-        logger.warning(f"AlignScore not available ({e}); using neutral fallback 0.5")
-        _alignscore_model = None
+        logger.info("AlignScore loaded ✅")
+    except Exception:
+        _alignscore_model = None  # silently disabled
     return _alignscore_model
 
-
-def compute_alignscore(context: str, claim: str) -> float:
-    """Faithfulness of claim w.r.t. context. Returns [0,1]; 0.5 = unavailable."""
+def compute_alignscore(context: str, answer: str) -> float:
+    """
+    AlignScore faithfulness score (Zha et al. ACL 2023).
+    Returns 0.5 (neutral) if AlignScore is not installed — does not crash.
+    """
     model = _get_alignscore()
-    if model is None or not context or not claim:
-        return 0.5
+    if model is None:
+        return 0.5  # neutral fallback — no penalty for missing AlignScore
     try:
-        scores = model.score(contexts=[context], claims=[claim])
-        return round(float(scores[0]), 4)
+        scores = model.score(contexts=[context], claims=[answer])
+        return float(scores[0]) if scores else 0.5
     except Exception as e:
-        logger.warning(f"AlignScore inference failed: {e}")
+        logger.debug(f"AlignScore failed: {e}")
         return 0.5
-
-
-class HallucinationSeverity(Enum):
-    """Severity levels for hallucinations."""
-    NONE = 0
-    MINOR = 1
-    MODERATE = 2
-    SEVERE = 3
-    CRITICAL = 4
-
-
-class HallucinationType(Enum):
-    """Types of hallucinations."""
-    NONE = "none"
-    FABRICATED_FACT = "fabricated_fact"
-    FALSE_CITATION = "false_citation"
-    OVERCONFIDENT_WRONG = "overconfident_wrong"
-    CONTEXT_DRIFT = "context_drift"
-    NUMERICAL_FABRICATION = "numerical_fabrication"
-    ENTITY_CONFUSION = "entity_confusion"
-    TEMPORAL_ERROR = "temporal_error"
-    RELATIONSHIP_ERROR = "relationship_error"
-
-
-@dataclass
-class GradingResult:
-    """Comprehensive grading result with all metrics."""
-    # Core scores (0-1)
-    factual_correctness: float = 0.0
-    source_grounding: float = 0.0
-    citation_accuracy: float = 0.0
-    confidence_calibration: float = 0.0
-    semantic_consistency: float = 0.0
-    hallucination_score: float = 0.0
-
-    # Combined reward
-    total_reward: float = 0.0
-
-    # Classification
-    is_hallucination: bool = False
-    hallucination_type: HallucinationType = HallucinationType.NONE
-    hallucination_severity: HallucinationSeverity = HallucinationSeverity.NONE
-
-    # Detailed analysis
-    semantic_analysis: Dict[str, Any] = field(default_factory=dict)
-    citation_analysis: Dict[str, Any] = field(default_factory=dict)
-    entity_analysis: Dict[str, Any] = field(default_factory=dict)
-
-    # Feedback
-    feedback: str = ""
-    detailed_explanation: str = ""
-
-    # Metadata
-    difficulty_adjustment: float = 0.0
-    bonus_points: float = 0.0
-
 
 def normalize_text(text: str, preserve_numbers: bool = False) -> str:
     """Normalize text for comparison with advanced preprocessing."""
@@ -834,6 +799,12 @@ def calculate_reward(
         difficulty_level = difficulty
     if recent_rewards is not None and len(recent_rewards) > 0:
         previous_performance = sum(recent_rewards) / len(recent_rewards)
+
+    # Strip <think> blocks from Nemotron 3 Super and other reasoning models
+    # before any grading — the thinking trace is not part of the answer
+    answer = _strip_thinking(answer)
+    if source_quote:
+        source_quote = _strip_thinking(source_quote)
 
     # Default weights - tuned for proper reward calibration
     # Grounded correct answers should receive 0.6+ rewards
