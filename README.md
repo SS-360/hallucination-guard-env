@@ -505,17 +505,6 @@ hallucination_guard_env/
 
 ---
 
-## 🗺️ Roadmap
-
-| Phase | Status | Description |
-|---|---|---|
-| Phase 1 — Deployment | ✅ Done | v4.1 live, 1M+ examples, 38 datasets, instant boot |
-| Phase 2 — Research-grade grader | ✅ Done | ROUGE, BERTScore, AlignScore, nli-deberta-v3-large |
-| Phase 3 — Experiments | 🔄 In progress | Qwen3-1.7B, Llama3-8B, Mistral-7B baseline + GRPO training |
-| Phase 4 — Paper | 📝 Planned | EMNLP 2026 system demonstration paper |
-
----
-
 ## Changelog
 
 ### v4.1.0 (2026-03)
