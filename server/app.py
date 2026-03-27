@@ -220,13 +220,6 @@ async def step(action_data: Dict[str, Any]):
     try:
         env = _get_default_env()
         valid = {f.name for f in dataclasses.fields(HallucinationAction)}
-        # Strip <think> blocks from Nemotron 3 Super and reasoning models
-        if "answer" in action_data:
-            from server.grader import _strip_thinking
-            action_data = dict(action_data)
-            action_data["answer"] = _strip_thinking(action_data["answer"])
-            if "source_quote" in action_data:
-                action_data["source_quote"] = _strip_thinking(action_data["source_quote"])
         action = HallucinationAction(**{k: v for k, v in action_data.items() if k in valid})
         obs = env.step(action)
         return JSONResponse(content=_safe_dict(obs))
@@ -650,6 +643,209 @@ async def run_baseline(body: Dict[str, Any] = {}):
 
 
 # ── Info & metrics ─────────────────────────────────────────────────────────────
+
+# ── OpenEnv Required Endpoints ───────────────────────────────────────────────
+
+@app.get("/metadata", summary="Environment metadata", tags=["OpenEnv"])
+async def metadata():
+    """
+    GET /metadata — Required by OpenEnv validator.
+    Returns environment name, description, version and author.
+    """
+    return {
+        "name":        "hallucination-guard-env",
+        "description": (
+            "An OpenEnv RL environment that trains AI models to answer questions "
+            "ONLY from verified context documents — penalizing hallucination and "
+            "rewarding factual grounding. Built on 1,090,163 examples across 38 "
+            "real-world QA datasets."
+        ),
+        "version":     "4.1.0",
+        "author":      "SamSankar",
+        "license":     "MIT",
+        "tags": [
+            "hallucination-detection",
+            "question-answering",
+            "grounded-generation",
+            "fact-checking",
+            "rl-environment",
+        ],
+        "links": {
+            "space":  "https://huggingface.co/spaces/SamSankar/hallucination-guard-env",
+            "pypi":   "https://pypi.org/project/openenv-halluguard/",
+            "docs":   "https://samsankar-hallucination-guard-env.hf.space/docs",
+        },
+    }
+
+
+@app.get("/schema", summary="Action, observation and state schemas", tags=["OpenEnv"])
+async def schema():
+    """
+    GET /schema — Required by OpenEnv validator.
+    Returns typed schemas for Action, Observation, and State spaces.
+    """
+    return {
+        "action": {
+            "type": "object",
+            "description": "The agent response for one step.",
+            "required": ["answer"],
+            "properties": {
+                "answer": {
+                    "type": "string",
+                    "description": "Answer derived ONLY from the provided context.",
+                },
+                "confidence": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "maximum": 1.0,
+                    "default": 0.5,
+                    "description": "Calibrated confidence (0=unsure, 1=certain).",
+                },
+                "source_quote": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Verbatim snippet from the context supporting the answer.",
+                },
+                "reasoning": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Optional chain-of-thought explanation.",
+                },
+            },
+        },
+        "observation": {
+            "type": "object",
+            "description": "What the agent receives after each step.",
+            "properties": {
+                "question":              {"type": "string"},
+                "context":               {"type": "string"},
+                "reward":                {"type": "number", "minimum": 0.0, "maximum": 1.0},
+                "done":                  {"type": "boolean"},
+                "is_hallucination":      {"type": "boolean"},
+                "hallucination_type":    {"type": "string"},
+                "hallucination_severity":{"type": "string"},
+                "grounding_score":       {"type": "number"},
+                "accuracy_so_far":       {"type": "number"},
+                "skill_rating":          {"type": "number"},
+                "attempts_remaining":    {"type": "integer"},
+                "feedback":              {"type": "string"},
+            },
+        },
+        "state": {
+            "type": "object",
+            "description": "Current episode state returned by GET /state.",
+            "properties": {
+                "episode_id":      {"type": "string"},
+                "step":            {"type": "integer"},
+                "max_steps":       {"type": "integer"},
+                "done":            {"type": "boolean"},
+                "skill_rating":    {"type": "number"},
+                "difficulty":      {"type": "string"},
+                "task_id":         {"type": "string"},
+                "accuracy_so_far": {"type": "number"},
+            },
+        },
+    }
+
+
+@app.post("/mcp", summary="MCP JSON-RPC endpoint", tags=["OpenEnv"])
+async def mcp(body: Dict[str, Any] = {}):
+    """
+    POST /mcp — Required by OpenEnv validator.
+    Implements the Model Context Protocol (MCP) JSON-RPC 2.0 interface.
+    Exposes environment tools: reset, step, state, tasks, grader.
+    """
+    jsonrpc = body.get("jsonrpc", "2.0")
+    method  = body.get("method", "")
+    params  = body.get("params", {})
+    req_id  = body.get("id", 1)
+
+    # MCP tools/list — advertise available tools
+    if method == "tools/list":
+        return {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "result": {
+                "tools": [
+                    {
+                        "name": "reset",
+                        "description": "Start a new episode. Returns question + context.",
+                        "inputSchema": {"type": "object", "properties": {}},
+                    },
+                    {
+                        "name": "step",
+                        "description": "Submit an answer. Returns reward + hallucination info.",
+                        "inputSchema": {
+                            "type": "object",
+                            "required": ["answer"],
+                            "properties": {
+                                "answer":       {"type": "string"},
+                                "confidence":   {"type": "number"},
+                                "source_quote": {"type": "string"},
+                            },
+                        },
+                    },
+                    {
+                        "name": "state",
+                        "description": "Get current episode state.",
+                        "inputSchema": {"type": "object", "properties": {}},
+                    },
+                    {
+                        "name": "tasks",
+                        "description": "List all 3 tasks with action schemas.",
+                        "inputSchema": {"type": "object", "properties": {}},
+                    },
+                ]
+            },
+        }
+
+    # MCP tools/call — route to actual endpoint logic
+    if method == "tools/call":
+        tool_name   = params.get("name", "")
+        tool_params = params.get("arguments", {})
+
+        try:
+            if tool_name == "reset":
+                result = await reset(tool_params)
+            elif tool_name == "step":
+                result = await step(tool_params)
+            elif tool_name == "state":
+                result = await get_state()
+            elif tool_name == "tasks":
+                result = await list_tasks()
+            else:
+                return {
+                    "jsonrpc": "2.0", "id": req_id,
+                    "error": {"code": -32601, "message": f"Unknown tool: {tool_name}"},
+                }
+
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "content": [{"type": "text", "text": str(result)}],
+                    "isError": False,
+                },
+            }
+        except Exception as e:
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "error": {"code": -32603, "message": str(e)},
+            }
+
+    # Default — return server info for any unknown method
+    return {
+        "jsonrpc": "2.0",
+        "id": req_id,
+        "result": {
+            "name":        "hallucination-guard-env",
+            "version":     "4.1.0",
+            "description": "OpenEnv RL environment for hallucination detection",
+            "capabilities": {"tools": {}},
+        },
+    }
+
 
 @app.get("/health", summary="Health check", tags=["Info"])
 async def health():
