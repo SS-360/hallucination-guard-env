@@ -1,7 +1,7 @@
 """Research-grade hallucination detection and grading system v4.0.
 
 Upgrades in v4.0:
-- NLI model upgraded: nli-deberta-v3-small -> nli-deberta-v3-large
+- NLI model: nli-deberta-v3-small (memory-efficient for HF Spaces)
 - ROUGE-1/2/L added (Lin 2004)
 - BERTScore added via DeBERTa-v3-base (Zhang et al. 2020)
 - AlignScore faithfulness added via RoBERTa (Zha et al. ACL 2023)
@@ -77,10 +77,18 @@ def _get_nli():
     if _nli_model is not None:
         return _nli_model
     try:
+        import os
         from sentence_transformers import CrossEncoder
-        _nli_model = CrossEncoder("cross-encoder/nli-deberta-v3-large")
+        # nli-deberta-v3-large (~1.5 GB) causes HF Spaces OOM/restart loops.
+        # Default to small (~280 MB). Set USE_LARGE_NLI=true locally if needed.
+        _use_large = os.getenv("USE_LARGE_NLI", "false").lower() == "true"
+        _model_name = (
+            "cross-encoder/nli-deberta-v3-large" if _use_large
+            else "cross-encoder/nli-deberta-v3-small"
+        )
+        _nli_model = CrossEncoder(_model_name)
         _nli_available = True
-        logger.info("NLI cross-encoder loaded: nli-deberta-v3-large")
+        logger.info(f"NLI cross-encoder loaded: {_model_name}")
     except Exception as e:
         logger.warning(f"NLI cross-encoder not available ({e}); using heuristic fallback")
         _nli_model = None
