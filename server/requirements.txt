@@ -4,6 +4,10 @@ fastapi>=0.100.0
 uvicorn>=0.23.0
 requests>=2.31.0
 
+# ── HuggingFace ──────────────────────────────────────────────────────────────────
+huggingface_hub>=0.20.0
+datasets>=2.14.0
+
 # ── NLP / ML ───────────────────────────────────────────────────────────────────
 # Embeddings + NLI cross-encoder (nli-deberta-v3-base for HF Spaces memory efficiency)
 sentence-transformers>=2.7.0
@@ -19,9 +23,6 @@ bert-score>=0.3.13
 
 # AlignScore  (Zha et al. ACL 2023) — install from GitHub, not PyPI
 # git+https://github.com/yuh-zha/AlignScore.git
-
-# ── HuggingFace datasets ────────────────────────────────────────────────────────
-datasets>=2.14.0
 
 # ── Data / serialisation ────────────────────────────────────────────────────────
 pydantic>=2.0.0
