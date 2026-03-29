@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "hallucination-guard-env"
-version = "4.0.0"
+version = "4.1.0"
 description = "Production RL environment for training LLMs on hallucination avoidance — 1M+ examples across 38 datasets"
 readme = "README.md"
 license = {text = "MIT"}
@@ -31,6 +31,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
+    "openenv-core>=0.2.0",
     "fastapi>=0.100.0",
     "uvicorn>=0.23.0",
     "requests>=2.31.0",
@@ -43,13 +44,16 @@ dev = [
     "httpx>=0.24.0",
 ]
 
+[project.scripts]
+hallucination-server = "server.app:main"
+
 [project.urls]
 Homepage = "https://huggingface.co/spaces/SamSankar/hallucination-guard-env"
 Repository = "https://github.com/SS-360/Openenv-halluguard"
 Documentation = "https://samsankar-hallucination-guard-env.hf.space/docs"
 
 [tool.hatch.build.targets.wheel]
-packages = ["hallucination_guard_env"]
+packages = ["server", "models.py", "client.py"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
