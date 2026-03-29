@@ -61,7 +61,6 @@ async def lifespan(app: FastAPI):
             logger.error(f"Failed to create environment: {e2}")
             # Last resort: create env without datasets
             from dataset_loader import DatasetLoader
-            from environment import HallucinationEnvironment
             class MinimalEnv:
                 def __init__(self):
                     self.dataset_loader = DatasetLoader()
