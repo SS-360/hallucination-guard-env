@@ -13,7 +13,7 @@ Endpoints:
   Baseline   : POST /baseline                 ← run baseline agent, return scores
 """
 
-import sys, os, uuid, logging, dataclasses, enum, time
+import sys, os, uuid, logging, dataclasses, enum, time, threading
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -40,41 +40,76 @@ logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Pre-load datasets once at startup so requests are instant."""
-    global _default_env
-    logger.info("Pre-loading datasets at startup...")
-    try:
-        _default_env = HallucinationEnvironment()
-        total = _default_env.dataset_loader.get_total_examples()
-        if total > 0:
-            logger.info(f"Startup complete — {total:,} examples loaded.")
-        else:
-            logger.warning("No datasets loaded at startup; will load on first request.")
-    except Exception as e:
-        logger.error(f"Startup pre-load failed ({e}); creating empty env for lazy loading.")
-        # Create minimal env that loads on demand
+# Global state for lazy initialization
+_default_env: Optional[HallucinationEnvironment] = None
+_env_loading = False
+_env_lock = threading.Lock()
+
+def _get_default_env() -> HallucinationEnvironment:
+    """Get or create the default environment (lazy initialization)."""
+    global _default_env, _env_loading
+
+    if _default_env is not None:
+        return _default_env
+
+    with _env_lock:
+        if _default_env is not None:
+            return _default_env
+        _env_loading = True
         try:
+            logger.info("Creating HallucinationEnvironment...")
             _default_env = HallucinationEnvironment()
-        except Exception as e2:
-            logger.error(f"Failed to create environment: {e2}")
-            # Last resort: create env without datasets
+            total = _default_env.dataset_loader.get_total_examples()
+            logger.info(f"Environment ready — {total:,} examples loaded.")
+            return _default_env
+        except Exception as e:
+            logger.error(f"Failed to create environment: {e}")
+            # Create minimal fallback environment
             from dataset_loader import DatasetLoader
             class MinimalEnv:
                 def __init__(self):
                     self.dataset_loader = DatasetLoader()
                     self.dataset_loader.examples = []
                 def reset(self, **kwargs):
-                    return type('Obs', (), {'question': 'Placeholder question', 'context': 'Placeholder context', 'reward': 0.0, 'done': False})()
+                    return type('Obs', (), {'question': 'Placeholder question', 'context': 'Placeholder context', 'reward': 0.0, 'done': False, 'info': {}})()
                 def step(self, action):
-                    return type('Obs', (), {'reward': 0.0, 'done': False, 'is_hallucination': False})()
+                    return type('Obs', (), {'reward': 0.0, 'done': False, 'is_hallucination': False, 'info': {}})()
                 def state(self):
                     return {}
                 def close(self):
                     pass
             _default_env = MinimalEnv()
+            return _default_env
+        finally:
+            _env_loading = False
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Fast startup: server becomes healthy immediately, datasets load in background."""
+    global _default_env
+
+    # Start background loading immediately (non-blocking)
+    def background_load():
+        try:
+            logger.info("Background dataset loading started...")
+            env = _get_default_env()
+            logger.info(f"Background loading complete — {env.dataset_loader.get_total_examples():,} examples ready.")
+        except Exception as e:
+            logger.error(f"Background loading failed: {e}")
+
+    # Server starts immediately - datasets load in background
+    logger.info("Server starting (datasets will load in background)...")
+    load_thread = threading.Thread(target=background_load, daemon=True)
+    load_thread.start()
+
     yield
+
+    # Cleanup on shutdown
+    if _default_env is not None:
+        try:
+            _default_env.close()
+        except Exception:
+            pass
 
 
 app = FastAPI(
@@ -150,7 +185,7 @@ app.add_middleware(
 
 # ── State ──────────────────────────────────────────────────────────────────────
 _sessions: Dict[str, HallucinationEnvironment] = {}
-_default_env: Optional[HallucinationEnvironment] = None
+# Note: _default_env is declared globally above with lazy initialization
 
 # Leaderboard — file-backed so it survives requests within the container lifetime
 import json as _json
@@ -176,11 +211,7 @@ def _save_leaderboard(lb: Dict[str, Any]) -> None:
 _leaderboard: Dict[str, Dict[str, Any]] = _load_leaderboard()
 
 
-def _get_default_env() -> HallucinationEnvironment:
-    global _default_env
-    if _default_env is None:
-        _default_env = HallucinationEnvironment()
-    return _default_env
+# _get_default_env is defined above (lazy initialization with background loading)
 
 
 def _safe_dict(obj):
