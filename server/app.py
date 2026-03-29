@@ -967,6 +967,11 @@ async def log_requests(request, call_next):
     return response
 
 
-if __name__ == "__main__":
+def main():
+    """Entry point for running the server."""
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=7860)
+
+
+if __name__ == "__main__":
+    main()
