@@ -1,8 +1,8 @@
 ---
 title: HallucinationGuard-Env
 emoji: 🛡️
-colorFrom: red
-colorTo: indigo
+colorFrom: gray
+colorTo: blue
 sdk: docker
 app_port: 7860
 pinned: true
