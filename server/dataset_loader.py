@@ -140,23 +140,14 @@ class DatasetLoader:
     # HF Dataset repo where cache files live
     HF_CACHE_REPO = "SamSankar/hallucination-guard-cache"
 
-    # Core datasets loaded instantly on startup (~400MB, fits in Space)
+    # Core datasets loaded at startup (minimal set for fast cold start)
+    # Others load in background after server is healthy
     CORE_DATASETS = [
-        "squad_50000.json",
-        "hotpotqa_50000.json",
-        "fever_50000.json",
-        "faithdial_50000.json",
-        "halueval_10000.json",
-        "truthful_qa_817.json",
-        "nq_open_50000.json",
-        "drop_50000.json",
-        "commonsense_qa_9741.json",
-        "boolq_9427.json",
-        "winogrande_40398.json",
-        "coqa_7199.json",
-        "openbookqa_4957.json",
-        "arc_2590.json",
-        "sciq_11679.json",
+        "squad_50000.json",        # Primary QA dataset
+        "halueval_10000.json",     # Hallucination detection
+        "boolq_9427.json",         # Boolean QA
+        "openbookqa_4957.json",    # Common knowledge
+        "sciq_11679.json",         # Science QA
     ]
 
     def __init__(self, cache_dir: Optional[str] = None):
@@ -187,11 +178,15 @@ class DatasetLoader:
 
     def _download_from_hf_dataset(self, filename: str) -> bool:
         """Download a single cache file from HF Dataset repo to /tmp/halluguard_cache/"""
+        import sys
         target = os.path.join(self.cache_dir, filename)
         if os.path.exists(target):
+            print(f"    {filename}: already cached", file=sys.stderr)
             return True
         try:
             from huggingface_hub import hf_hub_download
+            print(f"    {filename}: downloading...", file=sys.stderr)
+            sys.stderr.flush()
             path = hf_hub_download(
                 repo_id=self.HF_CACHE_REPO,
                 filename=filename,
@@ -199,25 +194,27 @@ class DatasetLoader:
                 local_dir=self.cache_dir,
                 local_dir_use_symlinks=False,
             )
-            print(f"  Downloaded {filename} from HF Dataset ✅")
+            print(f"    {filename}: downloaded ✅", file=sys.stderr)
             return True
         except Exception as e:
-            print(f"  Failed to download {filename}: {e}")
+            print(f"    {filename}: download failed ({e})", file=sys.stderr)
             return False
 
     def _download_extended_in_background(self, all_files: list, core_files: list):
         """Download non-core datasets in background after startup."""
+        import sys
         extended = [f for f in all_files if f not in core_files]
         if not extended:
             return
         def _bg():
-            print(f"  Background: downloading {len(extended)} extended datasets...")
+            print(f"  Background: downloading {len(extended)} extended datasets...", file=sys.stderr)
+            sys.stderr.flush()
             for fname in extended:
                 if self._download_from_hf_dataset(fname):
                     # Load into memory immediately after download
                     fpath = os.path.join(self.cache_dir, fname)
                     try:
-                        with open(fpath) as f:
+                        with open(fpath, encoding="utf-8") as f:
                             cached = json.load(f)
                         before = len(self.examples)
                         for ex in cached:
@@ -236,10 +233,12 @@ class DatasetLoader:
                         added = len(self.examples) - before
                         self._update_statistics()
                         self._build_indices()
-                        print(f"  Background loaded {fname}: +{added:,} examples (total: {len(self.examples):,})")
+                        print(f"  Background loaded {fname}: +{added:,} examples (total: {len(self.examples):,})", file=sys.stderr)
+                        sys.stderr.flush()
                     except Exception as e:
-                        print(f"  Background load error {fname}: {e}")
-            print(f"  Background loading complete. Total: {len(self.examples):,} examples")
+                        print(f"  Background load error {fname}: {e}", file=sys.stderr)
+            print(f"  Background loading complete. Total: {len(self.examples):,} examples", file=sys.stderr)
+            sys.stderr.flush()
         t = threading.Thread(target=_bg, daemon=True)
         t.start()
 
@@ -291,7 +290,9 @@ class DatasetLoader:
         2. Download extended datasets in background (async)
         3. Return once core datasets are loaded
         """
-        print(f"Loading from HF Dataset repo: {self.HF_CACHE_REPO}")
+        import sys
+        print(f"Loading from HF Dataset repo: {self.HF_CACHE_REPO}", file=sys.stderr)
+        sys.stderr.flush()
 
         # Get all available files in the dataset repo
         try:
@@ -300,27 +301,32 @@ class DatasetLoader:
                 f for f in list_repo_files(self.HF_CACHE_REPO, repo_type="dataset")
                 if f.endswith(".json")
             ]
-            print(f"  Found {len(all_files)} cache files in HF Dataset repo")
+            print(f"  Found {len(all_files)} cache files in HF Dataset repo", file=sys.stderr)
+            sys.stderr.flush()
         except Exception as e:
-            print(f"  Could not list HF Dataset repo files: {e}")
+            print(f"  Could not list HF Dataset repo files: {e}", file=sys.stderr)
             all_files = self.CORE_DATASETS
 
         total_added = 0
 
         # Step 1: Download and load core datasets synchronously
-        print(f"  Loading {len(self.CORE_DATASETS)} core datasets...")
+        print(f"  Loading {len(self.CORE_DATASETS)} core datasets...", file=sys.stderr)
+        sys.stderr.flush()
         for fname in self.CORE_DATASETS:
             if fname not in all_files:
+                print(f"    Skipping {fname} (not in repo)", file=sys.stderr)
                 continue
             if self._download_from_hf_dataset(fname):
                 fpath = os.path.join(self.cache_dir, fname)
                 added = self._load_from_json_file(fpath)
                 total_added += added
-                print(f"    {fname}: +{added:,} (total: {len(self.examples):,})")
+                print(f"    {fname}: +{added:,} (total: {len(self.examples):,})", file=sys.stderr)
+                sys.stderr.flush()
 
         self._update_statistics()
         self._build_indices()
-        print(f"  Core datasets loaded: {len(self.examples):,} examples ready ✅")
+        print(f"  Core datasets loaded: {len(self.examples):,} examples ready ✅", file=sys.stderr)
+        sys.stderr.flush()
 
         # Step 2: Download extended datasets in background
         self._download_extended_in_background(all_files, self.CORE_DATASETS)
