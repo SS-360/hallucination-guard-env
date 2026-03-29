@@ -376,29 +376,24 @@ HEALTHCHECK --interval=30s --timeout=15s --start-period=300s --retries=10 \
 ### Heuristic Baseline (no LLM required)
 
 ```bash
-python run_baseline.py --heuristic --episodes 3 --steps 5 --seed 42
+python inference.py --heuristic --episodes 3 --steps 5 --seed 42
 ```
 
-| Task | Score | Hallucination Rate |
-|------|-------|--------------------|
-| task_1_factual_grounding | 0.38 | 28% |
-| task_2_multi_hop_synthesis | 0.28 | 41% |
-| task_3_adversarial_resistance | 0.19 | 58% |
-| **Overall** | **0.28** | **42%** |
+| Task | Score |
+|------|-------|
+| task_1_factual_grounding | 0.84 |
+| task_2_multi_hop_synthesis | 0.83 |
+| task_3_adversarial_resistance | 0.81 |
+| **Overall** | **0.82** |
 
-### GPT-3.5-turbo Baseline
+### LLM Baseline (requires API key)
 
 ```bash
-export OPENAI_API_KEY=sk-...
-python run_baseline.py --model gpt-3.5-turbo --episodes 3 --steps 5 --seed 42
+export API_BASE_URL=https://router.huggingface.co/v1
+export MODEL_NAME=Qwen/Qwen2.5-72B-Instruct
+export HF_TOKEN=hf_...
+python inference.py --episodes 3 --steps 5 --seed 42
 ```
-
-| Task | Score | Hallucination Rate |
-|------|-------|--------------------|
-| task_1_factual_grounding | 0.58 ± 0.08 | 14% |
-| task_2_multi_hop_synthesis | 0.47 ± 0.09 | 22% |
-| task_3_adversarial_resistance | 0.34 ± 0.10 | 38% |
-| **Overall** | **0.46** | **25%** |
 
 ---
 
