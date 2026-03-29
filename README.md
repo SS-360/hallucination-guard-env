@@ -24,10 +24,10 @@ tags:
 > **The production-grade OpenEnv RL environment for training and evaluating LLMs on hallucination avoidance.**
 
 [![OpenEnv](https://img.shields.io/badge/OpenEnv-Compatible-blue)](https://github.com/meta-pytorch/OpenEnv)
-[![PyPI](https://img.shields.io/pypi/v/openenv-halluguard)](https://pypi.org/project/openenv-halluguard/)
+[![PyPI](https://img.shields.io/badge/PyPI-openenv--halluguard-orange)](https://pypi.org/project/openenv-halluguard/)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 [![Dataset](https://img.shields.io/badge/Dataset-1M%2B_examples-orange)](#datasets)
-[![Grader](https://img.shields.io/badge/Grader-research--grade-purple)](#grader)
+[![Grader](https://img.shields.io/badge/Grader-research--grade-purple)](#-hallucination-detection)
 
 ---
 
@@ -96,22 +96,42 @@ curl http://localhost:7860/health
 
 ---
 
-## Tasks
+## 📁 Project Structure
 
-HallucinationGuard-Env exposes **3 named tasks** in difficulty order.
-Each task maps to a curated subset of the 38 loaded datasets and uses
-task-specific grader weights.
+```
+hallucination-guard-env/
+├── Dockerfile                    # HF Spaces Docker config
+├── pyproject.toml                # Package metadata
+├── openenv.yaml                  # OpenEnv manifest
+├── README.md                     # This file
+│
+├── server/                       # FastAPI backend
+│   ├── app.py                    # Main FastAPI application (endpoints)
+│   ├── environment.py            # Core RL environment logic
+│   ├── grader.py                 # 9-component reward system
+│   ├── dataset_loader.py         # 38 dataset loader with HF cache
+│   ├── tasks.py                  # Task registry (3 tasks)
+│   ├── metrics.py                # Real-time metrics tracker
+│   ├── requirements.txt          # Python dependencies
+│   └── Dockerfile                # Server Docker image
+│
+├── models.py                     # Data models (Action, Observation, State)
+├── client.py                     # HTTP/WebSocket client
+├── run_baseline.py               # OpenAI baseline inference script
+└── inference.py                  # Hackathon submission script
+```
+
+---
+
+## 🎯 Tasks
+
+HallucinationGuard-Env exposes **3 named tasks** in difficulty order:
 
 | # | task_id | Difficulty | Primary Datasets | Frontier LLM Score |
 |---|---------|-----------|-----------------|-------------------|
 | 1 | `task_1_factual_grounding` | 🟢 Beginner | SQuAD, BoolQ, ARC, OpenBookQA | 0.70–0.85 |
 | 2 | `task_2_multi_hop_synthesis` | 🟡 Intermediate | HotpotQA, CoQA, NQ-Open, MS-MARCO | 0.55–0.70 |
 | 3 | `task_3_adversarial_resistance` | 🔴 Advanced | HaluEval, TruthfulQA, FEVER, AdversarialQA | 0.40–0.60 |
-
-Retrieve the full task list and action schema:
-```bash
-curl https://samsankar-hallucination-guard-env.hf.space/tasks
-```
 
 ---
 
@@ -125,10 +145,10 @@ Every `POST /step` call accepts this JSON body (only `answer` is required):
 
 ```json
 {
-    "answer":           "string  — derived ONLY from the provided context",
+    "answer":           "string — derived ONLY from the provided context",
     "confidence":       0.5,     // float 0.0–1.0, calibrated estimate
-    "source_quote":     "string  — verbatim phrase from context supporting the answer",
-    "reasoning":        "string  — optional chain-of-thought",
+    "source_quote":     "string — verbatim phrase from context supporting the answer",
+    "reasoning":        "string — optional chain-of-thought",
     "uncertainty_flags": []      // list of aspects the agent is unsure about
 }
 ```
@@ -137,7 +157,7 @@ Every `POST /step` call accepts this JSON body (only `answer` is required):
 
 ```python
 @dataclass
-class HallucinationObservation(Observation):
+class HallucinationObservation:
     question: str                  # The question to answer
     context: str                   # Source document to answer from
     reward: float                  # Step reward (-1.0 to 1.0)
@@ -172,98 +192,18 @@ state()
 
 ---
 
-## OpenEnv Required Endpoints
-
-### `GET /tasks`
-Returns all 3 task definitions and the complete action schema.
-
-```python
-import requests
-BASE = "https://samsankar-hallucination-guard-env.hf.space"
-tasks = requests.get(f"{BASE}/tasks").json()
-print(tasks["tasks"])   # list of 3 task objects
-print(tasks["action_schema"])  # JSON Schema for step actions
-```
-
-### `POST /grader`
-Score a completed episode. Pass the per-step rewards and info dicts collected during the episode.
-
-```python
-grade = requests.post(f"{BASE}/grader", json={
-    "task_id": "task_1_factual_grounding",
-    "step_rewards": [0.82, 0.55, 0.91, 0.43, 0.78],
-    "step_infos": [
-        {"correctness": 0.9, "grounding": 0.8, "calibration": 0.7,
-         "hallucination_score": 0.1, "is_hallucination": False},
-        # ... one dict per step
-    ]
-}).json()
-print(grade["score"])    # float in [0.0, 1.0]
-print(grade["breakdown"])
-```
-
-### `POST /baseline`
-Run the built-in heuristic agent across all 3 tasks. No API key needed.
-
-```python
-baseline = requests.post(f"{BASE}/baseline", json={
-    "steps_per_task": 5,
-    "seed": 42
-}).json()
-print(baseline["summary"])  # overall_score, avg_reward, hallucination_rate
-for task in baseline["tasks"]:
-    print(task["task_id"], task["score"])
-```
-
----
-
-## Baseline Scores
-
-Run `run_baseline.py` to reproduce these scores:
-
-```bash
-# Heuristic baseline (no API key)
-python run_baseline.py --heuristic --episodes 3 --steps 5 --seed 42
-
-# GPT-3.5-turbo baseline
-export OPENAI_API_KEY=sk-...
-python run_baseline.py --model gpt-3.5-turbo --episodes 3 --steps 5 --seed 42
-```
-
-### Heuristic Baseline (reproducible, no LLM required)
-
-| Task | Score | Hallucination Rate |
-|------|-------|--------------------|
-| task_1_factual_grounding | 0.38 | 28% |
-| task_2_multi_hop_synthesis | 0.28 | 41% |
-| task_3_adversarial_resistance | 0.19 | 58% |
-| **Overall** | **0.28** | **42%** |
-
-### GPT-3.5-turbo Baseline (3 episodes × 5 steps, seed=42)
-
-| Task | Score | Hallucination Rate |
-|------|-------|--------------------|
-| task_1_factual_grounding | 0.58 ± 0.08 | 14% |
-| task_2_multi_hop_synthesis | 0.47 ± 0.09 | 22% |
-| task_3_adversarial_resistance | 0.34 ± 0.10 | 38% |
-| **Overall** | **0.46** | **25%** |
-
-*Scores are averaged across episodes. Higher is better. Lower hallucination rate is better.*
-
----
-
-## 🏆 Reward System (v4.1 — Research-Grade)
+## 📊 Reward System (v4.1 — Research-Grade)
 
 | Component | Weight | Description |
 |-----------|--------|-------------|
 | Factual correctness | 0.30 | Exact/fuzzy match + semantic similarity to ground truth |
 | Source grounding | 0.20 | Verifies answer is supported by context |
-| Citation accuracy | 0.15 | source_quote found verbatim in context |
+| Citation accuracy | 0.15 | `source_quote` found verbatim in context |
 | Confidence calibration | 0.15 | ECE between stated confidence and correctness |
-| Semantic consistency | 0.10 | NLI entailment score (DeBERTa-v3-large) |
+| Semantic consistency | 0.10 | NLI entailment score (DeBERTa-v3-base) |
 | Hallucination penalty | 0.10 | Penalises detected hallucinations |
 | ROUGE (1/2/L) | 0.05 | Surface-form overlap with reference answer |
-| BERTScore (DeBERTa-v3) | 0.05 | Token-level semantic similarity |
+| BERTScore (DeBERTa) | 0.05 | Token-level semantic similarity |
 | AlignScore | 0.05 | Faithfulness to context (RoBERTa, ACL 2023) |
 
 Difficulty multiplier: `beginner × 0.9`, `intermediate × 1.0`, `advanced × 1.1`, `expert × 1.2`
@@ -272,13 +212,9 @@ Difficulty multiplier: `beginner × 0.9`, `intermediate × 1.0`, `advanced × 1.
 reward = clamp(Σ(weight × score) × difficulty_multiplier + consistency_bonus, 0.0, 1.0)
 ```
 
-**In practice:**
-- Hallucinated answer with false citation → reward ≈ **0.002–0.10**, CRITICAL severity
-- Grounded correct answer with real quote → reward ≈ **0.85–1.00**
-
 ---
 
-## 🔬 Hallucination Detection <a name="grader"></a>
+## 🔬 Hallucination Detection
 
 ### 8 Types Classified
 
@@ -303,22 +239,9 @@ reward = clamp(Σ(weight × score) × difficulty_multiplier + consistency_bonus,
 | SEVERE | 0.5–0.7 | Significantly fabricated content |
 | CRITICAL | 0.7+ | Answer largely invented |
 
-### Detection Algorithms (v4.0)
-
-- **Word coverage** — fraction of meaningful content words in answer found in context
-- **Entity hallucination** — novel entities in answer not found in source
-- **Numerical fabrication** — numbers in answer absent from context
-- **Sliding window fuzzy matching** — citation verification (threshold 0.7)
-- **Negation mismatch** — contradiction detection via negation word analysis
-- **Confidence calibration error** — `|confidence − correctness|` with 50% overconfidence surcharge
-- **NLI cross-encoder** — `cross-encoder/nli-deberta-v3-large` for semantic entailment (upgraded from small in v4.0)
-- **ROUGE-1/2/L** — standard token overlap metric in QA/summarisation research (Lin 2004)
-- **BERTScore** — contextual embedding similarity via DeBERTa-v3-base (Zhang et al. 2020)
-- **AlignScore** — faithfulness/grounding scorer via RoBERTa (Zha et al. ACL 2023)
-
 ---
 
-## 📚 Datasets <a name="datasets"></a>
+## 📚 Datasets
 
 **1,090,163 total examples** across 38 real-world QA datasets — cached permanently, instant boot:
 
@@ -360,118 +283,150 @@ reward = clamp(Σ(weight × score) × difficulty_multiplier + consistency_bonus,
 | Medical QA Pairs | 3,000 | Medical question similarity |
 | MS MARCO | 30,568 | Web search QA |
 
-### Add Custom Datasets
+---
 
-```python
-from server.dataset_loader import DatasetLoader
+## 🔧 OpenEnv Required Endpoints
 
-loader = DatasetLoader()
-loader.load_from_json("my_dataset.json")   # Custom JSON
-loader.load_from_huggingface("squad")      # Any HF dataset
+### `GET /tasks`
+Returns all 3 task definitions and the complete action schema.
+
+### `POST /grader`
+Score a completed episode. Pass the per-step rewards and info dicts collected during the episode.
+
+### `POST /baseline`
+Run the built-in heuristic agent across all 3 tasks. No API key required.
+
+---
+
+## 🌐 Deployment (HuggingFace Spaces)
+
+### Startup Optimization
+
+The environment uses a **two-phase loading strategy**:
+
+1. **Core datasets** (~50K examples) load synchronously at startup
+2. **Extended datasets** (~1M examples) load in background after server is healthy
+
+This ensures fast cold starts while maintaining full dataset availability.
+
+### Configuration
+
+```dockerfile
+# Dockerfile optimized for HF Spaces
+FROM python:3.10-slim
+
+# Pre-download ML models during build (saves ~2min startup)
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
+RUN python -c "from sentence_transformers import CrossEncoder; CrossEncoder('cross-encoder/nli-deberta-v3-base')"
+
+# Health check with 5-minute start-period for cold boot
+HEALTHCHECK --interval=30s --timeout=15s --start-period=300s --retries=10 \
+    CMD curl -f http://localhost:7860/health || exit 1
 ```
 
 ---
 
-## 🎓 Curriculum Learning
+## 📀 API Endpoints
 
-The environment adapts difficulty in real-time using an ELO-style skill rating:
+### Environment
 
-| Trigger | Action |
-|---|---|
-| Recent avg reward > 0.7 | Increase difficulty |
-| Recent avg reward < 0.3 | Decrease difficulty |
-| Overall accuracy > 0.8 | EXPERT ceiling |
-| Overall accuracy > 0.6 | ADVANCED ceiling |
-| Overall accuracy > 0.4 | INTERMEDIATE ceiling |
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/reset` | Start a new episode |
+| `POST` | `/step` | Submit an answer |
+| `GET` | `/state` | Get current episode state |
 
----
+### Sessions
 
-## 🔌 Works With Any LLM
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/session/reset` | Create a stateful session |
+| `POST` | `/session/step` | Step in a session |
+| `DELETE` | `/session` | Close a session |
 
-```python
-from hallucination_guard_env import HallucinationEnv, HallucinationAction
+### OpenEnv
 
-# OpenAI GPT-4
-import openai
-client = openai.OpenAI(api_key="sk-...")
-def gpt4(question, context):
-    r = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[{"role": "system", "content": "Answer ONLY from the context provided."},
-                  {"role": "user", "content": f"Context: {context}\n\nQuestion: {question}"}]
-    )
-    return r.choices[0].message.content
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/tasks` | List all tasks + action schema |
+| `POST` | `/grader` | Score a completed episode |
+| `POST` | `/baseline` | Run baseline agent |
+| `GET` | `/metadata` | Environment metadata |
+| `GET` | `/schema` | Action/Observation/State schemas |
+| `POST` | `/mcp` | MCP JSON-RPC endpoint |
 
-# Anthropic Claude
-import anthropic
-client = anthropic.Anthropic(api_key="sk-ant-...")
-def claude(question, context):
-    msg = client.messages.create(
-        model="claude-3-5-sonnet-20241022", max_tokens=256,
-        messages=[{"role": "user", "content": f"Context: {context}\n\nQuestion: {question}\n\nAnswer from context only."}]
-    )
-    return msg.content[0].text
+### Leaderboard
 
-# Groq (free tier)
-from groq import Groq
-gclient = Groq(api_key="YOUR_GROQ_KEY")
-def llama(question, context):
-    r = gclient.chat.completions.create(
-        model="llama-3.1-8b-instant",
-        messages=[{"role": "user", "content": f"Context: {context}\n\nQ: {question}"}],
-        max_tokens=200
-    )
-    return r.choices[0].message.content
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/leaderboard` | Model leaderboard |
+| `POST` | `/leaderboard/submit` | Submit evaluation results |
 
-# Ollama (local, free)
-import requests as req
-def ollama(question, context):
-    r = req.post("http://localhost:11434/api/generate",
-                 json={"model": "llama3", "stream": False,
-                       "prompt": f"Context: {context}\n\nQ: {question}\n\nAnswer from context only."})
-    return r.json()["response"]
+### Metrics
 
-# Evaluate
-env = HallucinationEnv()
-obs = env.reset()
-answer = gpt4(obs.question, obs.context)
-result = env.step(HallucinationAction(answer=answer, confidence=0.8))
-print(f"Reward: {result.reward}, Hallucinated: {result.is_hallucination}")
-```
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/metrics` | Real-time metrics |
+| `GET` | `/metrics/summary` | Metrics summary report |
 
 ---
 
-## 📊 Metrics & Monitoring
+## 📋 Baseline Scores
+
+### Heuristic Baseline (no LLM required)
 
 ```bash
-curl https://samsankar-hallucination-guard-env.hf.space/metrics
-curl https://samsankar-hallucination-guard-env.hf.space/metrics/summary
-curl https://samsankar-hallucination-guard-env.hf.space/leaderboard
-curl https://samsankar-hallucination-guard-env.hf.space/datasets
+python run_baseline.py --heuristic --episodes 3 --steps 5 --seed 42
 ```
+
+| Task | Score | Hallucination Rate |
+|------|-------|--------------------|
+| task_1_factual_grounding | 0.38 | 28% |
+| task_2_multi_hop_synthesis | 0.28 | 41% |
+| task_3_adversarial_resistance | 0.19 | 58% |
+| **Overall** | **0.28** | **42%** |
+
+### GPT-3.5-turbo Baseline
+
+```bash
+export OPENAI_API_KEY=sk-...
+python run_baseline.py --model gpt-3.5-turbo --episodes 3 --steps 5 --seed 42
+```
+
+| Task | Score | Hallucination Rate |
+|------|-------|--------------------|
+| task_1_factual_grounding | 0.58 ± 0.08 | 14% |
+| task_2_multi_hop_synthesis | 0.47 ± 0.09 | 22% |
+| task_3_adversarial_resistance | 0.34 ± 0.10 | 38% |
+| **Overall** | **0.46** | **25%** |
 
 ---
 
-## 🏗️ Project Structure
+## 💻 Development
 
+### Run Locally
+
+```bash
+# Clone and install
+git clone https://huggingface.co/spaces/SamSankar/hallucination-guard-env
+cd hallucination-guard-env
+pip install -r server/requirements.txt
+
+# Run server
+uvicorn server.app:app --reload --port 7860
+
+# Run tests
+pytest tests/
+
+# Run baseline
+python run_baseline.py --heuristic
 ```
-hallucination_guard_env/
-├── models.py               # HallucinationAction, Observation, State, Config
-├── client.py               # HTTP/WebSocket client
-├── model_adapters.py       # OpenAI, Anthropic, HuggingFace, Ollama adapters
-├── hallucination_guard_sdk.py  # Python SDK (evaluate + leaderboard)
-├── test_env.py             # Full test suite
-├── openenv.yaml            # Manifest
-├── pyproject.toml          # Package metadata
-└── server/
-    ├── environment.py      # Core RL environment logic + curriculum learning
-    ├── app.py              # FastAPI server (stateless + session + leaderboard)
-    ├── grader.py           # 9-component reward: ROUGE + BERTScore + AlignScore + NLI-large
-    ├── dataset_loader.py   # 38 dataset loader with persistent JSON cache
-    ├── metrics.py          # Real-time metrics tracker
-    ├── requirements.txt    # Dependencies including rouge-score, bert-score, alignscore
-    ├── cache/              # Pre-built dataset cache (instant boot, no downloads)
-    └── Dockerfile
+
+### Run with OpenAI
+
+```bash
+export OPENAI_API_KEY=sk-...
+python run_baseline.py --model gpt-4o --episodes 3 --steps 5
 ```
 
 ---
@@ -495,19 +450,24 @@ hallucination_guard_env/
 | **Real-world origin** | Born from an actual AI hallucination experience during hackathon research |
 | **Solves the #1 LLM problem** | Hallucination is the most critical reliability issue in production AI |
 | **Novel** | First OpenEnv environment targeting hallucination and grounding |
-| **Research-grade grader** | ROUGE + BERTScore + AlignScore + nli-deberta-v3-large — publication quality |
-| **1,090,163 diverse examples** | 38 real-world datasets: SQuAD, HaluEval, TruthfulQA, HotpotQA, MedQA and more |
+| **Research-grade grader** | ROUGE + BERTScore + AlignScore + nli-deberta-v3-base — publication quality |
+| **1M+ diverse examples** | 38 real-world datasets: SQuAD, HaluEval, TruthfulQA, HotpotQA, MedQA and more |
 | **Model-agnostic** | Works with GPT-4, Claude, Llama, Mistral, Gemma, Phi, or any LLM |
 | **PyPI package** | `pip install openenv-halluguard` for instant SDK access |
 | **Production-ready** | Session management, leaderboard, persistent cache, Dockerfile |
 | **Adaptive** | ELO-based curriculum scales difficulty with the agent's skill |
-| **Paper-ready** | Designed for EMNLP 2026 system demonstration submission |
 
 ---
 
 ## Changelog
 
 ### v4.1.0 (2026-03)
+
+- **Fixed** HF Spaces restart loop — optimized startup with lazy dataset loading
+- **Fixed** Missing `_torch_available()` function in grader
+- **Reduced** core datasets from 15 to 5 for faster cold starts
+- **Increased** healthcheck start-period to 300s for dataset downloads
+- **Added** stderr logging for progress visibility in HF Space logs
 - **Added** `GET /tasks` — lists all 3 tasks + action schema (OpenEnv required)
 - **Added** `POST /grader` — per-episode task scoring 0.0–1.0 (OpenEnv required)
 - **Added** `POST /baseline` — built-in heuristic baseline runner (OpenEnv required)
@@ -516,10 +476,11 @@ hallucination_guard_env/
 - **Updated** `openenv.yaml` to v4.1.0 with task declarations
 
 ### v4.0.0
+
 - 9-component reward system (ROUGE + BERTScore + AlignScore)
-- NLI upgraded to nli-deberta-v3-large
+- NLI upgraded to nli-deberta-v3-base (optimized for HF Spaces)
 - 38 datasets, 1,090,163 examples
 
 ---
 
-*Built for to Train Models to Stop Hallucination · MIT License*
+*Built to train models to stop hallucination · MIT License*
