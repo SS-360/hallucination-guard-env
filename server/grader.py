@@ -185,6 +185,14 @@ def compute_bertscore(hypothesis: str, reference: str) -> Dict[str, float]:
 _alignscore_model = None
 _alignscore_checked = False
 
+def _torch_available() -> bool:
+    """Check if PyTorch is available with CUDA support."""
+    try:
+        import torch
+        return torch.cuda.is_available()
+    except Exception:
+        return False
+
 def _get_alignscore():
     """AlignScore is optional — gracefully disabled if not installed."""
     global _alignscore_model, _alignscore_checked
