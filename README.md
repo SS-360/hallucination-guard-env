@@ -117,8 +117,7 @@ hallucination-guard-env/
 │
 ├── models.py                     # Data models (Action, Observation, State)
 ├── client.py                     # HTTP/WebSocket client
-├── run_baseline.py               # OpenAI baseline inference script
-└── inference.py                  # Hackathon submission script
+└── inference.py                  # Baseline inference script (hackathon submission)
 ```
 
 ---
@@ -389,9 +388,12 @@ python inference.py --heuristic --episodes 3 --steps 5 --seed 42
 ### LLM Baseline (requires API key)
 
 ```bash
+# Set required environment variables
 export API_BASE_URL=https://router.huggingface.co/v1
 export MODEL_NAME=Qwen/Qwen2.5-72B-Instruct
 export HF_TOKEN=hf_...
+
+# Run inference
 python inference.py --episodes 3 --steps 5 --seed 42
 ```
 
@@ -413,15 +415,17 @@ uvicorn server.app:app --reload --port 7860
 # Run tests
 pytest tests/
 
-# Run baseline
-python run_baseline.py --heuristic
+# Run baseline (heuristic, no API key)
+python inference.py --heuristic
 ```
 
-### Run with OpenAI
+### Run with LLM API
 
 ```bash
-export OPENAI_API_KEY=sk-...
-python run_baseline.py --model gpt-4o --episodes 3 --steps 5
+export API_BASE_URL=https://router.huggingface.co/v1
+export MODEL_NAME=Qwen/Qwen2.5-72B-Instruct
+export HF_TOKEN=hf_...
+python inference.py --episodes 3 --steps 5
 ```
 
 ---
@@ -466,7 +470,7 @@ python run_baseline.py --model gpt-4o --episodes 3 --steps 5
 - **Added** `GET /tasks` — lists all 3 tasks + action schema (OpenEnv required)
 - **Added** `POST /grader` — per-episode task scoring 0.0–1.0 (OpenEnv required)
 - **Added** `POST /baseline` — built-in heuristic baseline runner (OpenEnv required)
-- **Added** `run_baseline.py` — standalone OpenAI-client baseline inference script
+- **Added** `inference.py` — baseline inference script for hackathon submission
 - **Added** `server/tasks.py` — task registry with difficulty-mapped graders
 - **Updated** `openenv.yaml` to v4.1.0 with task declarations
 
