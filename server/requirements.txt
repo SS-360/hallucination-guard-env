@@ -9,17 +9,17 @@ huggingface_hub>=0.20.0
 datasets>=2.14.0
 
 # ── NLP / ML ─────────────────────────────────────────────────────────────────
-# torch is pre-installed as CPU-only in the Dockerfile before this file runs.
-# Do NOT list torch here — it would pull the full CUDA build (~2.4 GB).
-sentence-transformers>=2.7.0
+# torch pre-installed as CPU-only in Dockerfile — do NOT list here.
+# Pin transformers to 4.x to stay compatible with sentence-transformers tokenizer pin.
+sentence-transformers>=2.7.0,<3.0.0
+transformers>=4.35.0,<5.0.0
+tokenizers>=0.15.0,<0.24.0
 numpy>=1.24.0
-transformers>=4.35.0
 
 # ROUGE-1/2/L (Lin 2004)
 rouge-score>=0.1.2
 
 # BERTScore (Zhang et al. 2020)
-# bert-score pulls torch as a dep — it will reuse the CPU wheel already installed.
 bert-score>=0.3.13
 
 # ── Data / serialisation ─────────────────────────────────────────────────────
