@@ -14,9 +14,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY server/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Pre-download ML models during build (saves startup time)
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')" 2>/dev/null || true
-RUN python -c "from sentence_transformers import CrossEncoder; CrossEncoder('cross-encoder/nli-deberta-v3-base')" 2>/dev/null || true
+# ML models download on first request (faster build, slower first request)
+# Models: all-MiniLM-L6-v2 (~90MB), nli-deberta-v3-base (~400MB)
 
 # Copy application code
 COPY . .
