@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from typing import Optional, Dict, Any, List, Literal
 from enum import Enum
 import uuid
+from pydantic import BaseModel, Field
 
 from openenv.core.env_server import Action, Observation, State
 
@@ -42,8 +43,7 @@ class DifficultyLevel(Enum):
     EXPERT = "expert"
 
 
-@dataclass
-class RewardBreakdown:
+class RewardBreakdown(BaseModel):
     """Detailed breakdown of reward components."""
     factual_correctness: float = 0.0
     source_grounding: float = 0.0
@@ -56,8 +56,7 @@ class RewardBreakdown:
     total: float = 0.0
 
 
-@dataclass
-class SemanticAnalysis:
+class SemanticAnalysis(BaseModel):
     """Results of semantic analysis on the answer."""
     embedding_similarity: float = 0.0
     entailment_score: float = 0.0
@@ -67,17 +66,15 @@ class SemanticAnalysis:
     semantic_density: float = 0.0
 
 
-@dataclass
-class CitationAnalysis:
+class CitationAnalysis(BaseModel):
     """Results of citation verification."""
     exact_match: bool = False
-    partial_matches: List[Dict[str, Any]] = field(default_factory=list)
+    partial_matches: List[Dict[str, Any]] = Field(default_factory=list)
     citation_location: Optional[str] = None
     surrounding_context: str = ""
     citation_confidence: float = 0.0
 
 
-@dataclass
 class HallucinationAction(Action):
     """
     Comprehensive action space for the AI agent.
@@ -93,23 +90,21 @@ class HallucinationAction(Action):
     confidence: float = 0.5
     source_quote: str = ""
     reasoning: str = ""
-    alternative_answers: List[str] = field(default_factory=list)
-    uncertainty_flags: List[str] = field(default_factory=list)
+    alternative_answers: List[str] = Field(default_factory=list)
+    uncertainty_flags: List[str] = Field(default_factory=list)
     requires_clarification: bool = False
-    clarification_questions: List[str] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    clarification_questions: List[str] = Field(default_factory=list)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
-@dataclass
-class MultiTurnDialogue:
+class MultiTurnDialogue(BaseModel):
     """Track multi-turn conversation state."""
     turn_number: int = 0
-    conversation_history: List[Dict[str, str]] = field(default_factory=list)
-    unresolved_queries: List[str] = field(default_factory=list)
-    context_shifts: List[str] = field(default_factory=list)
+    conversation_history: List[Dict[str, str]] = Field(default_factory=list)
+    unresolved_queries: List[str] = Field(default_factory=list)
+    context_shifts: List[str] = Field(default_factory=list)
 
 
-@dataclass
 class HallucinationObservation(Observation):
     """
     Comprehensive observation space with rich feedback signals.
@@ -159,11 +154,10 @@ class HallucinationObservation(Observation):
     dialogue: Optional[MultiTurnDialogue] = None
 
     # Extended metadata
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
-@dataclass
-class EpisodeStatistics:
+class EpisodeStatistics(BaseModel):
     """Comprehensive statistics for an episode."""
     episode_id: str = ""
     total_questions: int = 0
@@ -174,27 +168,25 @@ class EpisodeStatistics:
     average_confidence: float = 0.0
     average_reward: float = 0.0
     calibration_error: float = 0.0
-    hallucination_types: Dict[HallucinationType, int] = field(default_factory=dict)
-    difficulty_distribution: Dict[DifficultyLevel, int] = field(default_factory=dict)
-    time_per_question: List[float] = field(default_factory=list)
-    reward_history: List[float] = field(default_factory=list)
+    hallucination_types: Dict[str, int] = Field(default_factory=dict)
+    difficulty_distribution: Dict[str, int] = Field(default_factory=dict)
+    time_per_question: List[float] = Field(default_factory=list)
+    reward_history: List[float] = Field(default_factory=list)
 
 
-@dataclass
-class AgentSkillProfile:
+class AgentSkillProfile(BaseModel):
     """Long-term skill profile for an agent."""
     overall_accuracy: float = 0.0
     grounding_skill: float = 0.0
     calibration_skill: float = 0.0
     hallucination_rate: float = 0.0
-    difficulty_ceiling: DifficultyLevel = DifficultyLevel.BEGINNER
-    weak_areas: List[str] = field(default_factory=list)
-    strong_areas: List[str] = field(default_factory=list)
+    difficulty_ceiling: str = "beginner"
+    weak_areas: List[str] = Field(default_factory=list)
+    strong_areas: List[str] = Field(default_factory=list)
     total_episodes: int = 0
     total_steps: int = 0
 
 
-@dataclass
 class HallucinationState(State):
     """
     Comprehensive state tracking for the RL environment.
@@ -207,7 +199,7 @@ class HallucinationState(State):
     """
     # Episode identification
     episode_id: Optional[str] = None
-    session_id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
+    session_id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])
 
     # Step tracking
     step_count: int = 0
@@ -216,7 +208,7 @@ class HallucinationState(State):
     # Hallucination tracking
     total_hallucinations: int = 0
     hallucination_rate: float = 0.0
-    hallucination_types_detected: Dict[str, int] = field(default_factory=dict)
+    hallucination_types_detected: Dict[str, int] = Field(default_factory=dict)
 
     # Performance tracking
     total_correct: int = 0
@@ -229,7 +221,7 @@ class HallucinationState(State):
     calibration_error: float = 0.0
 
     # Curriculum state
-    current_difficulty: DifficultyLevel = DifficultyLevel.INTERMEDIATE
+    current_difficulty: str = "intermediate"
     curriculum_stage: int = 0
     skill_rating: float = 0.5
 
@@ -238,18 +230,18 @@ class HallucinationState(State):
     best_streak: int = 0
 
     # Extended statistics
-    episode_stats: Optional[EpisodeStatistics] = None
-    agent_profile: Optional[AgentSkillProfile] = None
+    episode_stats: Optional[Dict[str, Any]] = None
+    agent_profile: Optional[Dict[str, Any]] = None
 
     # Environment configuration
-    config: Dict[str, Any] = field(default_factory=dict)
+    config: Dict[str, Any] = Field(default_factory=dict)
 
     # Timestamps
     episode_start_time: Optional[float] = None
     last_step_time: Optional[float] = None
 
     # Metadata for extensibility
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert state to dictionary for serialization."""
@@ -263,7 +255,7 @@ class HallucinationState(State):
             "total_correct": self.total_correct,
             "accuracy": self.accuracy,
             "average_reward": self.average_reward,
-            "current_difficulty": self.current_difficulty.value,
+            "current_difficulty": self.current_difficulty,
             "curriculum_stage": self.curriculum_stage,
             "skill_rating": self.skill_rating,
             "current_streak": self.current_streak,
@@ -272,27 +264,25 @@ class HallucinationState(State):
         }
 
 
-@dataclass
-class TrainingMetrics:
+class TrainingMetrics(BaseModel):
     """Metrics for tracking training progress over time."""
-    episode_rewards: List[float] = field(default_factory=list)
-    hallucination_rates: List[float] = field(default_factory=list)
-    accuracy_curve: List[float] = field(default_factory=list)
-    calibration_errors: List[float] = field(default_factory=list)
-    difficulty_progression: List[str] = field(default_factory=list)
+    episode_rewards: List[float] = Field(default_factory=list)
+    hallucination_rates: List[float] = Field(default_factory=list)
+    accuracy_curve: List[float] = Field(default_factory=list)
+    calibration_errors: List[float] = Field(default_factory=list)
+    difficulty_progression: List[str] = Field(default_factory=list)
     moving_average_reward: float = 0.0
-    trend_direction: Literal["improving", "stable", "declining"] = "stable"
+    trend_direction: str = "stable"
 
 
-@dataclass
-class EnvironmentConfig:
+class EnvironmentConfig(BaseModel):
     """Configuration for the hallucination detection environment."""
     # Episode configuration
     max_questions_per_episode: int = 10
     min_questions_for_completion: int = 5
 
     # Reward configuration
-    reward_weights: Dict[str, float] = field(default_factory=lambda: {
+    reward_weights: Dict[str, float] = Field(default_factory=lambda: {
         "factual_correctness": 0.30,
         "source_grounding": 0.20,
         "citation_accuracy": 0.15,
@@ -302,7 +292,7 @@ class EnvironmentConfig:
     })
 
     # Difficulty configuration
-    initial_difficulty: DifficultyLevel = DifficultyLevel.INTERMEDIATE
+    initial_difficulty: str = "intermediate"
     adaptive_difficulty: bool = True
     difficulty_threshold_increase: float = 0.7
     difficulty_threshold_decrease: float = 0.4
@@ -320,6 +310,6 @@ class EnvironmentConfig:
     max_turns_per_question: int = 3
 
     # Model compatibility
-    supported_model_types: List[str] = field(default_factory=lambda: [
+    supported_model_types: List[str] = Field(default_factory=lambda: [
         "openai", "anthropic", "huggingface", "ollama", "llama", "generic"
     ])
