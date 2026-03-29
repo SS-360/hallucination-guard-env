@@ -21,11 +21,11 @@ Usage:
     # Run against local dev server:
     python inference.py --env-url http://localhost:7860
 
-Expected baseline scores (heuristic agent, seed=42):
-    task_1_factual_grounding      : ~0.48
-    task_2_multi_hop_synthesis    : ~0.38
-    task_3_adversarial_resistance : ~0.27
-    overall                       : ~0.38
+Expected baseline scores (heuristic agent, seed=42, 3 episodes x 5 steps):
+    task_1_factual_grounding      : ~0.84
+    task_2_multi_hop_synthesis    : ~0.83
+    task_3_adversarial_resistance : ~0.81
+    overall                       : ~0.82
 """
 
 from __future__ import annotations
