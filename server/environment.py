@@ -633,6 +633,15 @@ class HallucinationEnvironment(Environment[HallucinationAction, HallucinationObs
         """Create a comprehensive observation."""
         accuracy_so_far = self.total_correct / max(1, self.step_count) if self.step_count > 0 else 0.0
 
+        # Extract reward breakdown from metadata if available
+        reward_breakdown = None
+        semantic_analysis = None
+        citation_analysis = None
+        if metadata:
+            reward_breakdown = metadata.get("reward_breakdown")
+            semantic_analysis = metadata.get("semantic_analysis")
+            citation_analysis = metadata.get("citation_analysis")
+
         return HallucinationObservation(
             question=question,
             context=context,
@@ -654,6 +663,9 @@ class HallucinationEnvironment(Environment[HallucinationAction, HallucinationObs
             curriculum_progress=self.step_count / max(1, self.config.max_questions_per_episode),
             skill_rating=self.skill_rating,
             dialogue=self.dialogue,
+            reward_breakdown=reward_breakdown,
+            semantic_analysis=semantic_analysis,
+            citation_analysis=citation_analysis,
             metadata=metadata or {}
         )
 
@@ -669,6 +681,9 @@ class HallucinationEnvironment(Environment[HallucinationAction, HallucinationObs
             grounding_score=0.0,
             accuracy_so_far=0.0,
             attempts_remaining=0,
+            reward_breakdown=None,
+            semantic_analysis=None,
+            citation_analysis=None,
             metadata={"error": error_message}
         )
 
