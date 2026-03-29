@@ -1,34 +1,32 @@
-# ── Core server ────────────────────────────────────────────────────────────────
+# ── Core server ─────────────────────────────────────────────────────────────
 openenv-core>=0.2.0
 fastapi>=0.100.0
 uvicorn>=0.23.0
 requests>=2.31.0
 
-# ── HuggingFace ──────────────────────────────────────────────────────────────────
+# ── HuggingFace ──────────────────────────────────────────────────────────────
 huggingface_hub>=0.20.0
 datasets>=2.14.0
 
-# ── NLP / ML ───────────────────────────────────────────────────────────────────
-# Embeddings + NLI cross-encoder (nli-deberta-v3-base for HF Spaces memory efficiency)
+# ── NLP / ML ─────────────────────────────────────────────────────────────────
+# torch is pre-installed as CPU-only in the Dockerfile before this file runs.
+# Do NOT list torch here — it would pull the full CUDA build (~2.4 GB).
 sentence-transformers>=2.7.0
-torch>=2.0.0
 numpy>=1.24.0
 transformers>=4.35.0
 
-# ROUGE-1/2/L  (Lin 2004)
+# ROUGE-1/2/L (Lin 2004)
 rouge-score>=0.1.2
 
-# BERTScore  (Zhang et al. 2020)
+# BERTScore (Zhang et al. 2020)
+# bert-score pulls torch as a dep — it will reuse the CPU wheel already installed.
 bert-score>=0.3.13
 
-# AlignScore  (Zha et al. ACL 2023) — install from GitHub, not PyPI
-# git+https://github.com/yuh-zha/AlignScore.git
-
-# ── Data / serialisation ────────────────────────────────────────────────────────
+# ── Data / serialisation ─────────────────────────────────────────────────────
 pydantic>=2.0.0
 aiofiles>=23.0.0
 python-json-logger>=2.0.0
 
-# ── Testing ─────────────────────────────────────────────────────────────────────
+# ── Testing ───────────────────────────────────────────────────────────────────
 pytest>=7.4.0
 pytest-asyncio>=0.21.0
