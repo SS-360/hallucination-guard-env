@@ -215,7 +215,12 @@ _leaderboard: Dict[str, Dict[str, Any]] = _load_leaderboard()
 
 
 def _safe_dict(obj):
-    if dataclasses.is_dataclass(obj):
+    # Handle Pydantic models (v2 uses model_dump, v1 uses dict)
+    if hasattr(obj, 'model_dump'):
+        return _safe_dict(obj.model_dump())
+    elif hasattr(obj, 'dict'):
+        return _safe_dict(obj.dict())
+    elif dataclasses.is_dataclass(obj):
         return {f.name: _safe_dict(getattr(obj, f.name)) for f in dataclasses.fields(obj)}
     elif isinstance(obj, enum.Enum):
         return obj.value
@@ -274,7 +279,11 @@ async def step(action_data: Dict[str, Any]):
     """
     try:
         env = _get_default_env()
-        valid = {f.name for f in dataclasses.fields(HallucinationAction)}
+        # Pydantic v2 uses model_fields, v1 uses __fields__
+        if hasattr(HallucinationAction, 'model_fields'):
+            valid = set(HallucinationAction.model_fields.keys())
+        else:
+            valid = set(HallucinationAction.__fields__.keys())
         action = HallucinationAction(**{k: v for k, v in action_data.items() if k in valid})
         obs = env.step(action)
         return JSONResponse(content=_safe_dict(obs))
@@ -320,7 +329,7 @@ async def session_step(action_data: Dict[str, Any],
     if x_session_id not in _sessions:
         raise HTTPException(status_code=404,
                             detail=f"Session {x_session_id} not found. Call /session/reset first.")
-    valid = {f.name for f in dataclasses.fields(HallucinationAction)}
+    valid = set(HallucinationAction.model_fields.keys()) if hasattr(HallucinationAction, 'model_fields') else set(HallucinationAction.__fields__.keys())
     action = HallucinationAction(**{k: v for k, v in action_data.items() if k in valid})
     obs = _sessions[x_session_id].step(action)
     result = _safe_dict(obs)
@@ -633,7 +642,7 @@ async def run_baseline(body: Dict[str, Any] = {}):
             confidence = 0.6
             # ─────────────────────────────────────────────────────────────
 
-            valid = {f.name for f in dataclasses.fields(HallucinationAction)}
+            valid = set(HallucinationAction.model_fields.keys()) if hasattr(HallucinationAction, 'model_fields') else set(HallucinationAction.__fields__.keys())
             action = HallucinationAction(
                 answer=answer,
                 confidence=confidence,
