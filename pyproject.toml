@@ -45,7 +45,7 @@ dev = [
 ]
 
 [project.scripts]
-hallucination-server = "server.app:main"
+server = "server.app:main"
 
 [project.urls]
 Homepage = "https://huggingface.co/spaces/SamSankar/hallucination-guard-env"
