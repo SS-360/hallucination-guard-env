@@ -100,7 +100,7 @@ Respond in JSON with these exact keys:
 class EnvClient:
     """Thin HTTP wrapper around the HallucinationGuard REST API."""
 
-    def __init__(self, base_url: str, timeout: int = 60):
+    def __init__(self, base_url: str, timeout: int = 300):
         self.base    = base_url.rstrip("/")
         self.timeout = timeout
         self.session = requests.Session()
