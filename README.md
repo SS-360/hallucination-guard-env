@@ -387,7 +387,7 @@ python inference.py --heuristic --episodes 3 --steps 5 --seed 42 --env-url http:
 | task_3_adversarial_resistance | 0.22 | ±0.16 |
 | **Overall** | **0.25** | - |
 
-> **Note**: Scores are reproducible with `--seed 42`. The heuristic intentionally returns the first sentence of context — it's meant to be a weak baseline, not a competitive benchmark.
+> **Note**: Scores are reproducible with `--seed 42`. The heuristic intentionally returns the first sentence of context — it's meant to be a weak baseline, not a competitive benchmark. It ignores the question, uses a fixed confidence (0.6), and provides an irrelevant source quote (first 80 chars). Real LLMs should score 1.5-2x higher by actually reading questions and finding relevant context.
 
 ### LLM Baseline (requires API key)
 
@@ -399,6 +399,48 @@ export HF_TOKEN=hf_...
 
 # Run inference
 python inference.py --episodes 3 --steps 5 --seed 42
+```
+
+### Tested LLM Results
+
+We tested multiple LLMs on this benchmark (3 episodes × 5 steps, seed=42):
+
+| Rank | Model | Provider | Overall Score | Task 1 | Task 2 | Task 3 | Time |
+|------|-------|----------|---------------|--------|--------|--------|------|
+| 🥇 | Llama 3.3 70B | Groq (cloud) | **0.462** | 0.499 | 0.431 | 0.458 | 95s |
+| 🥈 | Qwen2.5:7B | Ollama (local CPU) | **0.427** | 0.497 | 0.339 | 0.444 | 555s |
+| 🥉 | Nemotron 3 Super | OpenRouter (cloud) | **0.418** | 0.612 | 0.397 | ~0.38 | 771s |
+| 4 | Llama 3.1 8B | Groq (cloud) | 0.406 | 0.437 | 0.419 | 0.363 | 145s |
+| 5 | Heuristic baseline | — | 0.25 | 0.29 | 0.25 | 0.22 | 61s |
+
+*\*Nemotron Task 3 score is estimated based on Task 1-2 performance.*
+
+**Key Findings:**
+- **Groq Llama 3.3 70B** is the fastest and most accurate for cloud inference
+- **Local Qwen2.5:7B on CPU** achieves 92% of Groq's performance — excellent for privacy-sensitive applications
+- Local inference requires ~6x longer than cloud but runs entirely offline
+
+#### Running with Ollama (Local)
+
+```bash
+# Install and pull model
+ollama pull qwen2.5:7b
+
+# Run inference (local)
+API_BASE_URL=http://localhost:11434/v1 MODEL_NAME=qwen2.5:7b HF_TOKEN=ollama \
+  python inference.py --env-url http://localhost:7860 --episodes 3 --steps 5
+```
+
+#### Running with Groq (Cloud)
+
+```bash
+# Set environment variables
+export API_BASE_URL=https://api.groq.com/openai/v1
+export MODEL_NAME=llama-3.3-70b-versatile
+export HF_TOKEN=gsk_your_key_here
+
+# Run inference
+python inference.py --env-url http://localhost:7860 --episodes 3 --steps 5 --seed 42
 ```
 
 ---
