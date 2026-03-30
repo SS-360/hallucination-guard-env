@@ -22,10 +22,10 @@ Usage:
     python inference.py --env-url http://localhost:7860
 
 Expected baseline scores (heuristic agent, seed=42, 3 episodes x 5 steps):
-    task_1_factual_grounding      : ~0.41
-    task_2_multi_hop_synthesis    : ~0.38
-    task_3_adversarial_resistance : ~0.27
-    overall                       : ~0.35
+    task_1_factual_grounding      : ~0.29
+    task_2_multi_hop_synthesis    : ~0.25
+    task_3_adversarial_resistance : ~0.22
+    overall                       : ~0.25
 """
 
 from __future__ import annotations

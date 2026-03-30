@@ -22,7 +22,7 @@ openenv:
   env_type: custom
 
   server:
-    port: 8000
+    port: 7860
     host: 0.0.0.0
 
   parameters:
