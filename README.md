@@ -380,10 +380,10 @@ python inference.py --heuristic --episodes 3 --steps 5 --seed 42
 
 | Task | Score |
 |------|-------|
-| task_1_factual_grounding | 0.84 |
-| task_2_multi_hop_synthesis | 0.83 |
-| task_3_adversarial_resistance | 0.81 |
-| **Overall** | **0.82** |
+| task_1_factual_grounding | 0.41 |
+| task_2_multi_hop_synthesis | 0.38 |
+| task_3_adversarial_resistance | 0.27 |
+| **Overall** | **0.35** |
 
 ### LLM Baseline (requires API key)
 
