@@ -514,41 +514,47 @@ async def grade_episode(body: Dict[str, Any]):
 
     A **completion bonus** of +0.05 is applied to full episodes (≥ 5 steps).
     """
-    task_id = body.get("task_id")
-    if not task_id:
-        raise HTTPException(status_code=422, detail="'task_id' is required.")
+    try:
+        task_id = body.get("task_id")
+        if not task_id:
+            raise HTTPException(status_code=422, detail="'task_id' is required.")
 
-    task = get_task(task_id)
-    if task is None:
-        valid_ids = list(ALL_TASKS.keys())
-        raise HTTPException(
-            status_code=404,
-            detail=f"task_id '{task_id}' not found. Valid values: {valid_ids}",
-        )
+        task = get_task(task_id)
+        if task is None:
+            valid_ids = list(ALL_TASKS.keys())
+            raise HTTPException(
+                status_code=404,
+                detail=f"task_id '{task_id}' not found. Valid values: {valid_ids}",
+            )
 
-    step_rewards: List[float] = body.get("step_rewards", [])
-    step_infos: List[Dict[str, Any]] = body.get("step_infos", [])
+        step_rewards: List[float] = body.get("step_rewards", [])
+        step_infos: List[Dict[str, Any]] = body.get("step_infos", [])
 
-    if not isinstance(step_rewards, list):
-        raise HTTPException(status_code=422, detail="'step_rewards' must be a list of floats.")
+        if not isinstance(step_rewards, list):
+            raise HTTPException(status_code=422, detail="'step_rewards' must be a list of floats.")
 
-    # Fallback: if no step_infos provided, use mean reward directly
-    if not step_infos and step_rewards:
-        mean_reward = sum(step_rewards) / len(step_rewards)
-        return {
-            "task_id": task_id,
-            "score": round(min(1.0, max(0.0, mean_reward)), 4),
-            "breakdown": {"mean_reward": round(mean_reward, 4)},
-            "metadata": {
-                "task_id": task.task_id,
-                "difficulty": task.difficulty,
-                "steps": len(step_rewards),
-                "note": "Scored from step_rewards only (no step_infos provided).",
-            },
-        }
+        # Fallback: if no step_infos provided, use mean reward directly
+        if not step_infos and step_rewards:
+            mean_reward = sum(step_rewards) / len(step_rewards)
+            return {
+                "task_id": task_id,
+                "score": round(min(1.0, max(0.0, mean_reward)), 4),
+                "breakdown": {"mean_reward": round(mean_reward, 4)},
+                "metadata": {
+                    "task_id": task.task_id,
+                    "difficulty": task.difficulty,
+                    "steps": len(step_rewards),
+                    "note": "Scored from step_rewards only (no step_infos provided).",
+                },
+            }
 
-    result = compute_task_score(task, step_rewards, step_infos)
-    return result
+        result = compute_task_score(task, step_rewards, step_infos)
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Grader error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Grader error: {str(e)}")
 
 
 @app.post(
