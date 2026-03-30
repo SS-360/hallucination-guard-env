@@ -374,16 +374,20 @@ HEALTHCHECK --interval=30s --timeout=15s --start-period=300s --retries=10 \
 
 ### Heuristic Baseline (no LLM required)
 
+The heuristic baseline extracts the first sentence of the context as the answer. This establishes a floor that real LLMs should beat.
+
 ```bash
-python inference.py --heuristic --episodes 3 --steps 5 --seed 42
+python inference.py --heuristic --episodes 3 --steps 5 --seed 42 --env-url http://localhost:7860
 ```
 
-| Task | Score |
-|------|-------|
-| task_1_factual_grounding | 0.41 |
-| task_2_multi_hop_synthesis | 0.38 |
-| task_3_adversarial_resistance | 0.27 |
-| **Overall** | **0.35** |
+| Task | Score | Std Dev |
+|------|-------|---------|
+| task_1_factual_grounding | 0.29 | ±0.15 |
+| task_2_multi_hop_synthesis | 0.25 | ±0.14 |
+| task_3_adversarial_resistance | 0.22 | ±0.16 |
+| **Overall** | **0.25** | - |
+
+> **Note**: Scores are reproducible with `--seed 42`. The heuristic intentionally returns the first sentence of context — it's meant to be a weak baseline, not a competitive benchmark.
 
 ### LLM Baseline (requires API key)
 
@@ -464,6 +468,7 @@ python inference.py --episodes 3 --steps 5
 
 - **Fixed** HF Spaces restart loop — optimized startup with lazy dataset loading
 - **Fixed** Missing `_torch_available()` function in grader
+- **Fixed** Reproducibility — seed now properly resets dataset sampling for consistent results
 - **Reduced** core datasets from 15 to 5 for faster cold starts
 - **Increased** healthcheck start-period to 300s for dataset downloads
 - **Added** stderr logging for progress visibility in HF Space logs
