@@ -236,29 +236,28 @@ def compute_task_score(
                 vals.append(float(v))
         return sum(vals) / len(vals) if vals else 0.0
 
+    # Use per-step rewards as primary signal for honest task scoring
+    avg_step_reward = sum(step_rewards) / n
+
     avg_correctness    = _avg("correctness")
     avg_grounding      = _avg("grounding")
     avg_calibration    = _avg("calibration")
     avg_hallucination  = _avg("hallucination_score")
     hallucination_rate = sum(1 for i in step_infos if i.get("is_hallucination")) / n
 
-    # Weighted score using task-specific weights
-    weighted = (
-        task.correctness_weight    * avg_correctness +
-        task.grounding_weight      * avg_grounding +
-        task.calibration_weight    * avg_calibration +
-        task.hallucination_penalty_weight * (1.0 - avg_hallucination)
-    )
+    # Primary score = mean per-step reward minus hallucination penalty
+    hallucination_penalty = task.hallucination_penalty_weight * avg_hallucination
+    base_score = max(0.0, avg_step_reward - hallucination_penalty)
 
-    # Completion bonus: full episode gets a small bonus
-    completion_bonus = 0.05 if n >= 5 else 0.0
+    # Small completion bonus for finishing all steps
+    completion_bonus = 0.02 if n >= 5 else 0.0
 
-    raw_score = min(1.0, max(0.0, weighted + completion_bonus))
+    raw_score = min(1.0, max(0.0, base_score + completion_bonus))
 
-    # Task-3 specific: reward confident refusals on adversarial questions
+    # Task-3: extra penalty for overconfident wrong answers
     if task.task_id == TASK_3.task_id:
-        calibration_bonus = max(0.0, avg_calibration - 0.6) * 0.1
-        raw_score = min(1.0, raw_score + calibration_bonus)
+        overconfidence_penalty = max(0.0, avg_calibration - 0.7) * avg_hallucination * 0.1
+        raw_score = max(0.0, raw_score - overconfidence_penalty)
 
     return {
         "score": round(raw_score, 4),
