@@ -268,7 +268,7 @@ def compute_task_score(
             "avg_hallucination":  round(avg_hallucination, 4),
             "hallucination_rate": round(hallucination_rate, 4),
             "completion_bonus":   round(completion_bonus, 4),
-            "weighted_sum":       round(weighted, 4),
+            "avg_step_reward":    round(avg_step_reward, 4),
         },
         "metadata": {
             "task_id":    task.task_id,
