@@ -561,7 +561,8 @@ def detect_hallucination_advanced(
         "numerical_fabrication": 0.0,
         "temporal_errors": 0.0,
         "relationship_errors": 0.0,
-        "confidence_mismatch": 0.0
+        "confidence_mismatch": 0.0,
+        "answer_truth_overlap": 0.0
     }
 
     if not answer:
@@ -634,12 +635,17 @@ def detect_hallucination_advanced(
     # Check for contradiction with ground truth (most important signal)
     if ground_truth:
         truth_sim, _ = check_factual_accuracy_advanced(answer, ground_truth, "")
+        analysis["answer_truth_overlap"] = truth_sim
+
+        # Strong penalty for wrong answers
+        if truth_sim < 0.5:  # Answer doesn't match ground truth
+            hallucination_score += 0.4 * (1.0 - truth_sim)
         if truth_sim < 0.3:  # Answer contradicts truth
-            hallucination_score += 0.5
+            hallucination_score += 0.3
             analysis["contradiction_with_truth"] = True
         # Additional penalty for very low similarity
         if truth_sim < 0.2:
-            hallucination_score += 0.3
+            hallucination_score += 0.2
 
     # Low word coverage indicates hallucination
     if analysis["word_coverage"] < 0.5:
@@ -670,6 +676,8 @@ def detect_hallucination_advanced(
         hallucination_type = HallucinationType.NUMERICAL_FABRICATION
     elif analysis["entity_hallucination"] > 0.5:
         hallucination_type = HallucinationType.ENTITY_CONFUSION
+    elif analysis.get("answer_truth_overlap", 1.0) < 0.3:
+        hallucination_type = HallucinationType.FABRICATED_FACT
     elif analysis["word_coverage"] < 0.3:
         hallucination_type = HallucinationType.FABRICATED_FACT
     elif analysis["confidence_mismatch"] > 0.3:
@@ -846,17 +854,18 @@ def calculate_reward(
 
     # Default weights - tuned for proper reward calibration
     # Grounded correct answers should receive 0.6+ rewards
+    # Incorrect but grounded answers should receive < 0.4
     if reward_weights is None:
         reward_weights = {
-            "factual_correctness":    0.30,
-            "source_grounding":       0.25,
+            "factual_correctness":    0.35,
+            "source_grounding":       0.20,
             "citation_accuracy":      0.10,
-            "confidence_calibration": 0.08,
-            "semantic_consistency":   0.07,
-            "hallucination_penalty":  0.05,
-            "rouge_score":            0.05,
-            "bertscore":              0.05,
-            "alignscore":             0.05,
+            "confidence_calibration": 0.10,
+            "semantic_consistency":   0.10,
+            "hallucination_penalty":  0.10,
+            "rouge_score":            0.02,
+            "bertscore":              0.02,
+            "alignscore":             0.01,
         }
 
     # Component 1: Factual correctness
@@ -895,19 +904,24 @@ def calculate_reward(
 
     # Factual correctness gate: if answer is factually wrong, cap the reward
     # This prevents high rewards for well-grounded but incorrect answers
-    factual_cap = correctness  # Wrong answers can't score higher than their correctness
+    # A wrong answer should still get some credit for being grounded (partial credit)
+    factual_cap = min(1.0, 0.40 + 0.60 * correctness)  # Minimum 0.40 for grounded wrong answers
+
+    # Grounding contribution is reduced for incorrect answers
+    # but still gives significant credit for being grounded
+    effective_grounding = grounding_score * (0.7 + 0.3 * correctness)
 
     # Calculate base reward
     base_reward = (
         reward_weights["factual_correctness"]    * correctness +
-        reward_weights["source_grounding"]       * min(grounding_score, factual_cap) +
+        reward_weights["source_grounding"]       * effective_grounding +
         reward_weights["citation_accuracy"]      * min(citation_analysis.get("best_match_score", 0.0), factual_cap) +
         reward_weights["confidence_calibration"] * calibration_score +
         reward_weights["semantic_consistency"]   * min(semantic_score, factual_cap) +
         reward_weights["hallucination_penalty"]  * hallucination_penalty_score +
-        reward_weights.get("rouge_score", 0.05)  * min(rouge_combined, factual_cap) +
-        reward_weights.get("bertscore",   0.05)  * min(bertscore_f1, factual_cap) +
-        reward_weights.get("alignscore",  0.05)  * min(align_score, factual_cap)
+        reward_weights.get("rouge_score", 0.02)  * min(rouge_combined, factual_cap) +
+        reward_weights.get("bertscore",   0.02)  * min(bertscore_f1, factual_cap) +
+        reward_weights.get("alignscore",  0.01)  * min(align_score, factual_cap)
     )
 
     # Difficulty bonus
