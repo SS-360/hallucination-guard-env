@@ -62,10 +62,17 @@ def _get_embedder():
 
 
 def _cosine_similarity(a, b) -> float:
-    import numpy as np
-    a, b = np.array(a), np.array(b)
-    denom = (np.linalg.norm(a) * np.linalg.norm(b))
-    return float(np.dot(a, b) / denom) if denom > 0 else 0.0
+    try:
+        import numpy as np
+        a, b = np.array(a), np.array(b)
+        denom = (np.linalg.norm(a) * np.linalg.norm(b))
+        return float(np.dot(a, b) / denom) if denom > 0 else 0.0
+    except Exception:
+        # Fallback: manual cosine similarity without numpy
+        dot_product = sum(x * y for x, y in zip(a, b))
+        norm_a = sum(x * x for x in a) ** 0.5
+        norm_b = sum(x * x for x in b) ** 0.5
+        return dot_product / (norm_a * norm_b) if norm_a * norm_b > 0 else 0.0
 
 
 # ── NLI cross-encoder ─────────────────────────────────────────────────────────
@@ -215,8 +222,13 @@ def _get_alignscore():
             alignment_type="bin",
         )
         logger.info("AlignScore loaded ✅")
-    except Exception:
-        _alignscore_model = None  # silently disabled
+    except ImportError:
+        logger.info("AlignScore not installed — using fallback (neutral score 0.5). "
+                    "To enable, install: pip install alignscore")
+        _alignscore_model = None
+    except Exception as e:
+        logger.warning(f"AlignScore initialization failed: {e} — using fallback")
+        _alignscore_model = None
     return _alignscore_model
 
 def compute_alignscore(context: str, answer: str) -> float:
@@ -802,6 +814,63 @@ def compute_semantic_consistency(answer: str, context: str, ground_truth: str) -
     return max(0.0, min(1.0, consistency_score)), analysis
 
 
+def is_refusal_answer(answer: str) -> Tuple[bool, float]:
+    """
+    Detect if the answer is a proper refusal ("I don't know" style response).
+
+    Returns:
+        Tuple of (is_refusal, confidence_score)
+        - is_refusal: True if answer is a refusal
+        - confidence_score: 0.6-0.8 for proper low-confidence refusals
+    """
+    if not answer:
+        return True, 0.5
+
+    answer_lower = answer.lower().strip()
+
+    # Common refusal phrases
+    refusal_phrases = [
+        "i don't know",
+        "i cannot answer",
+        "i can't answer",
+        "i am unable to answer",
+        "i'm unable to answer",
+        "not mentioned",
+        "not provided",
+        "not in the context",
+        "not in context",
+        "cannot be determined",
+        "cannot determine",
+        "i cannot determine",
+        "i can't determine",
+        "can't be determined",
+        "insufficient information",
+        "not enough information",
+        "no information",
+        "the context does not",
+        "the document does not",
+        "i cannot find",
+        "i can't find",
+        "not stated",
+        "not specified",
+        "unknown",
+    ]
+
+    for phrase in refusal_phrases:
+        if phrase in answer_lower:
+            # Check if it's a proper low-confidence refusal
+            if len(answer_lower) < 100:  # Short refusal is best
+                return True, 0.75
+            else:
+                return True, 0.65
+
+    # Very short non-committal answers
+    if len(answer_lower) < 15 and any(w in answer_lower for w in ["unknown", "unclear", "uncertain", "not sure"]):
+        return True, 0.70
+
+    return False, 0.0
+
+
 def calculate_reward(
     answer: str,
     confidence: float,
@@ -846,11 +915,62 @@ def calculate_reward(
     if recent_rewards is not None and len(recent_rewards) > 0:
         previous_performance = sum(recent_rewards) / len(recent_rewards)
 
-    # Strip <think> blocks from Nemotron 3 Super and other reasoning models
+    # Strip<think> blocks from Nemotron 3 Super and other reasoning models
     # before any grading — the thinking trace is not part of the answer
     answer = _strip_thinking(answer)
     if source_quote:
         source_quote = _strip_thinking(source_quote)
+
+    # Check if this is a refusal answer ("I don't know" style)
+    is_refusal, refusal_confidence_score = is_refusal_answer(answer)
+
+    # For adversarial questions (ground_truth indicates unanswerable), reward proper refusals
+    ground_truth_lower = ground_truth.lower() if ground_truth else ""
+    is_unanswerable = any(marker in ground_truth_lower for marker in [
+        "not mentioned", "not in context", "unknown", "unanswerable",
+        "cannot be determined", "insufficient", "no information"
+    ])
+
+    # If this is an unanswerable question and agent properly refused
+    if is_unanswerable and is_refusal:
+        refusal_reward = refusal_confidence_score
+        if confidence <= 0.5:
+            refusal_reward = min(1.0, refusal_reward + 0.15)
+        return refusal_reward, {
+            "correctness": refusal_reward,
+            "grounding": 1.0,
+            "calibration": 1.0 if confidence <= 0.5 else 0.7,
+            "semantic_consistency": 1.0,
+            "hallucination_score": 0.0,
+            "hallucination_penalty": 1.0,
+            "is_hallucination": False,
+            "hallucination_type": "none",
+            "hallucination_severity": "NONE",
+            "is_refusal": True,
+            "is_unanswerable": True,
+            "total_reward": refusal_reward,
+            "feedback": "Properly refused to answer unanswerable question.",
+            "confidence": confidence,
+        }
+
+    # If refusal but question IS answerable, it's underconfident
+    if is_refusal and not is_unanswerable:
+        return 0.3, {
+            "correctness": 0.0,
+            "grounding": 0.5,
+            "calibration": 0.5 if confidence <= 0.3 else 0.3,
+            "semantic_consistency": 0.5,
+            "hallucination_score": 0.0,
+            "hallucination_penalty": 1.0,
+            "is_hallucination": False,
+            "hallucination_type": "none",
+            "hallucination_severity": "NONE",
+            "is_refusal": True,
+            "is_unanswerable": False,
+            "total_reward": 0.3,
+            "feedback": "Underconfident refusal — answer exists in context.",
+            "confidence": confidence,
+        }
 
     # Default weights - tuned for proper reward calibration
     # Grounded correct answers should receive 0.6+ rewards
@@ -993,6 +1113,9 @@ def calculate_reward(
         "semantic_analysis": semantic_analysis,
         "hallucination_analysis": hallucination_analysis,
 
+        # Hallucination explanation (human-readable)
+        "hallucination_explanation": explain_hallucination(hallucination_analysis) if is_hallucination else "",
+
         # Confidence info
         "confidence": confidence,
         "calibration_error": calibration_error,
@@ -1010,9 +1133,10 @@ def generate_feedback(
     grounding_score: float,
     correctness: float,
     calibration_score: float,
-    total_reward: float
+    total_reward: float,
+    hallucination_analysis: Dict[str, Any] = None
 ) -> str:
-    """Generate detailed, actionable feedback for the AI."""
+    """Generate detailed, actionable feedback with hallucination explanation."""
 
     feedback_parts = []
 
@@ -1032,11 +1156,24 @@ def generate_feedback(
     else:
         feedback_parts.append("WARNING: Source citation NOT found in context.")
 
-    # Hallucination feedback
+    # Hallucination feedback with explanation
     if is_hallucination:
         severity_str = hallucination_severity.name.lower()
         type_str = hallucination_type.value.replace("_", " ")
         feedback_parts.append(f"HALLUCINATION DETECTED ({severity_str}): {type_str}.")
+
+        # Add explanation based on hallucination analysis
+        if hallucination_analysis:
+            if hallucination_analysis.get("entity_hallucination", 0) > 0.3:
+                entities = hallucination_analysis.get("novel_entities", [])
+                if entities:
+                    feedback_parts.append(f"Fabricated entities: {', '.join(list(entities)[:3])}.")
+            if hallucination_analysis.get("numerical_fabrication", 0) > 0.3:
+                feedback_parts.append("Numbers in answer not found in context.")
+            if hallucination_analysis.get("word_coverage", 1.0) < 0.5:
+                feedback_parts.append(f"Only {int(hallucination_analysis.get('word_coverage', 0) * 100)}% of answer words appear in context.")
+            if hallucination_analysis.get("confidence_mismatch", 0) > 0.2:
+                feedback_parts.append("Confidence too high for answer quality.")
 
         if hallucination_severity in [HallucinationSeverity.SEVERE, HallucinationSeverity.CRITICAL]:
             feedback_parts.append("This is a serious hallucination that significantly undermines trust.")
@@ -1058,6 +1195,43 @@ def generate_feedback(
         feedback_parts.append("Overall: Poor performance - review and recalibrate.")
 
     return " ".join(feedback_parts)
+
+
+def explain_hallucination(hallucination_analysis: Dict[str, Any]) -> str:
+    """
+    Generate a human-readable explanation of why hallucination was detected.
+
+    Returns a concise explanation suitable for debugging or user feedback.
+    """
+    if not hallucination_analysis:
+        return "No hallucination analysis available."
+
+    explanations = []
+
+    entity_score = hallucination_analysis.get("entity_hallucination", 0)
+    if entity_score > 0.5:
+        explanations.append(f"Entity hallucination ({entity_score:.0%}): Answer contains names/entities not in source.")
+
+    num_score = hallucination_analysis.get("numerical_fabrication", 0)
+    if num_score > 0.3:
+        explanations.append(f"Numerical fabrication ({num_score:.0%}): Numbers invented or misstated.")
+
+    word_coverage = hallucination_analysis.get("word_coverage", 1.0)
+    if word_coverage < 0.5:
+        explanations.append(f"Low word coverage ({word_coverage:.0%}): Many answer words not in context.")
+
+    truth_overlap = hallucination_analysis.get("answer_truth_overlap", 1.0)
+    if truth_overlap < 0.3:
+        explanations.append(f"Ground truth mismatch ({truth_overlap:.0%}): Answer differs from correct answer.")
+
+    confidence_mismatch = hallucination_analysis.get("confidence_mismatch", 0)
+    if confidence_mismatch > 0.3:
+        explanations.append(f"Overconfidence ({confidence_mismatch:.0%}): Confidence exceeds answer quality.")
+
+    if not explanations:
+        return "Hallucination detected but specific cause unclear."
+
+    return " | ".join(explanations)
 
 
 def generate_feedback_from_info(info: Dict[str, Any]) -> str:

@@ -15,7 +15,11 @@ datasets>=2.14.0
 sentence-transformers>=2.7.0,<3.0.0
 transformers>=4.35.0,<5.0.0
 tokenizers>=0.15.0,<0.24.0
-numpy>=1.24.0
+# CRITICAL: Pin numpy<2 to avoid NumPy 2.x incompatibility with pre-compiled packages
+# (sentence-transformers, torch, scipy, etc. all fail with NumPy 2.x)
+numpy>=1.24.0,<2.0.0
+# Required for BERTScore protobuf serialization
+protobuf>=3.20.0,<5.0.0
 
 # ROUGE-1/2/L (Lin 2004)
 rouge-score>=0.1.2

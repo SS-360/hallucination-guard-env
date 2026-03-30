@@ -268,3 +268,45 @@ class TestDifficultyMultipliers:
         reward_expert, _ = calculate_reward(**args, difficulty_level="expert")
         reward_beginner, _ = calculate_reward(**args, difficulty_level="beginner")
         assert reward_expert >= reward_beginner
+
+
+class TestRefusalHandling:
+    """Tests for 'I don't know' refusal handling."""
+
+    def test_proper_refusal_on_unanswerable(self):
+        """Proper refusal on unanswerable question should be rewarded."""
+        reward, info = calculate_reward(
+            answer="I cannot answer from the provided context.",
+            confidence=0.3,
+            source_quote="",
+            context="The sky is blue.",
+            ground_truth="not mentioned",
+            difficulty_level="advanced"
+        )
+        assert reward >= 0.6
+        assert info.get("is_refusal") == True
+
+    def test_refusal_with_low_confidence(self):
+        """Refusal with low confidence should score well."""
+        reward, info = calculate_reward(
+            answer="The answer is not in the context.",
+            confidence=0.2,
+            source_quote="",
+            context="Some unrelated text.",
+            ground_truth="unknown",
+            difficulty_level="beginner"
+        )
+        assert reward >= 0.5
+
+    def test_underconfident_refusal(self):
+        """Refusal when answer exists should be penalized."""
+        reward, info = calculate_reward(
+            answer="I don't know",
+            confidence=0.3,
+            source_quote="",
+            context="The capital of France is Paris.",
+            ground_truth="Paris",  # Answer exists!
+            difficulty_level="beginner"
+        )
+        assert reward < 0.5
+        assert info.get("is_refusal") == True
