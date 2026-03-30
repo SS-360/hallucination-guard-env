@@ -193,6 +193,8 @@ class HallucinationEnvironment(Environment[HallucinationAction, HallucinationObs
         import random
         if seed is not None:
             random.seed(seed)
+            # Reset used indices for reproducibility
+            self.dataset_loader.reset_usage()
 
         # ── Model adapter setup ───────────────────────────────────────────────
         # When model= is supplied, the environment auto-generates answers by
