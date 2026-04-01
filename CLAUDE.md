@@ -9,7 +9,9 @@ HallucinationGuard-Env is an OpenEnv RL environment for training LLMs to avoid h
 ## Key Commands
 
 ```bash
-# Install dependencies
+# Install dependencies (root requirements.txt for pip install -e .)
+pip install -e .
+# Or for full ML dependencies (Docker/production):
 pip install -r server/requirements.txt
 
 # Run server locally (port 7860)
