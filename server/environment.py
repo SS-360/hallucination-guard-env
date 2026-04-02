@@ -699,7 +699,7 @@ class HallucinationEnvironment(Environment[HallucinationAction, HallucinationObs
             attempts_remaining=max(0, self.config.max_questions_per_episode - self.step_count),
             current_streak=self.current_streak,
             best_streak=self.best_streak,
-            difficulty_level=self._get_current_difficulty().value,
+            difficulty_level=self._get_current_difficulty().value if hasattr(self._get_current_difficulty(), 'value') else str(self._get_current_difficulty()),
             curriculum_progress=self.step_count / max(1, self.config.max_questions_per_episode),
             skill_rating=self.skill_rating,
             dialogue=self.dialogue,
@@ -821,7 +821,15 @@ class HallucinationEnvironment(Environment[HallucinationAction, HallucinationObs
         # Get current difficulty from example
         current_difficulty = self.config.initial_difficulty
         if self.current_example:
-            current_difficulty = self.current_example.difficulty
+            # Convert string to DifficultyLevel enum if needed
+            example_diff = self.current_example.difficulty
+            if isinstance(example_diff, str):
+                try:
+                    current_difficulty = DifficultyLevel(example_diff.lower())
+                except ValueError:
+                    current_difficulty = self.config.initial_difficulty
+            else:
+                current_difficulty = example_diff
 
         # Stage-specific mastery thresholds
         mastery_thresholds = {
