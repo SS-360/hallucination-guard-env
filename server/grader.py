@@ -308,6 +308,162 @@ def extract_key_claims(text: str) -> List[str]:
     return claims
 
 
+# ── Edge Case Handling: Numerical Tolerance ────────────────────────────────────
+NUMBER_WORDS = {
+    "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+    "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15,
+    "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50,
+    "hundred": 100, "thousand": 1000, "million": 1000000,
+    "half": 0.5, "quarter": 0.25, "third": 0.333,
+}
+
+APPROXIMATION_WORDS = {"approximately", "about", "around", "roughly", "nearly", "almost", "close to", "approx."}
+
+
+def normalize_numbers(text: str) -> Set[float]:
+    """
+    Extract and normalize all numbers from text, handling:
+    - Digits: "50" -> 50.0
+    - Words: "fifty" -> 50.0
+    - Percentages: "50%" -> 0.5
+    - Fractions: "1/2" -> 0.5
+    - Units: "50 dollars" -> 50.0
+
+    Returns set of normalized float values.
+    """
+    numbers = set()
+
+    # Extract digit-based numbers
+    digit_nums = re.findall(r'\d+(?:\.\d+)?', text)
+    for n in digit_nums:
+        try:
+            numbers.add(float(n))
+        except ValueError:
+            pass
+
+    # Extract word-based numbers
+    text_lower = text.lower()
+    for word, value in NUMBER_WORDS.items():
+        if word in text_lower:
+            numbers.add(float(value))
+
+    # Extract percentages and normalize to decimals
+    percentages = re.findall(r'(\d+(?:\.\d+)?)\s*%', text)
+    for p in percentages:
+        try:
+            numbers.add(float(p) / 100.0)
+        except ValueError:
+            pass
+
+    # Extract fractions
+    fractions = re.findall(r'(\d+)\s*/\s*(\d+)', text)
+    for num, denom in fractions:
+        try:
+            numbers.add(float(num) / float(denom))
+        except ValueError:
+            pass
+
+    return numbers
+
+
+def numbers_approx_match(a: float, b: float, tolerance: float = 0.1) -> bool:
+    """
+    Check if two numbers match within relative tolerance.
+    Handles cases like "approximately 50" vs "50" or "48".
+    """
+    if a == b:
+        return True
+    max_val = max(abs(a), abs(b), 1e-10)
+    return abs(a - b) / max_val < tolerance
+
+
+def check_numerical_match(answer_nums: Set[float], truth_nums: Set[float], tolerance: float = 0.1) -> Tuple[bool, float]:
+    """
+    Check if answer numbers match truth numbers with tolerance.
+
+    Returns: (is_match, match_score)
+    - is_match: True if all critical numbers match
+    - match_score: 0.0-1.0 indicating match quality
+    """
+    if not truth_nums:
+        # No numbers in ground truth, no penalty
+        return True, 1.0
+
+    if not answer_nums:
+        # Numbers expected but none provided
+        return False, 0.0
+
+    # Check each truth number for approximate match in answer
+    matched = 0
+    for truth_n in truth_nums:
+        for ans_n in answer_nums:
+            if numbers_approx_match(truth_n, ans_n, tolerance):
+                matched += 1
+                break
+
+    match_ratio = matched / len(truth_nums)
+    return match_ratio >= 0.8, match_ratio
+
+
+def detect_hedging(text: str) -> Tuple[bool, float]:
+    """
+    Detect hedging language in answer.
+
+    Returns: (has_hedging, hedging_intensity)
+    - has_hedging: True if hedging detected
+    - hedging_intensity: 0.0-1.0 (higher = more hedging)
+    """
+    text_lower = text.lower()
+
+    hedging_count = 0
+    for phrase in APPROXIMATION_WORDS:
+        if phrase in text_lower:
+            hedging_count += 1
+
+    # Check for modal verbs indicating uncertainty
+    modal_verbs = ["might", "could", "may", "possibly", "perhaps", "seems"]
+    for modal in modal_verbs:
+        if modal in text_lower:
+            hedging_count += 0.5
+
+    intensity = min(1.0, hedging_count / 3.0)
+    return intensity > 0, intensity
+
+
+def handle_ambiguous_answer(
+    answer: str,
+    ground_truth: str,
+    valid_alternatives: List[str] = None
+) -> Tuple[float, str]:
+    """
+    Handle cases where multiple answers may be valid.
+
+    Returns: (score, matched_answer)
+    """
+    # Normalize answer
+    answer_norm = normalize_text(answer)
+    truth_norm = normalize_text(ground_truth)
+
+    # Check primary answer
+    if answer_norm == truth_norm or truth_norm in answer_norm:
+        return 1.0, ground_truth
+
+    # Check alternatives if provided
+    if valid_alternatives:
+        for alt in valid_alternatives:
+            alt_norm = normalize_text(alt)
+            if answer_norm == alt_norm or alt_norm in answer_norm:
+                return 0.95, alt
+
+    # Check semantic similarity
+    similarity = compute_string_similarity(answer, ground_truth)
+    if similarity > 0.8:
+        return similarity, ground_truth
+
+    return 0.0, ""
+
+
 def compute_string_similarity(s1: str, s2: str) -> float:
     """Compute semantic similarity between two strings.
 
@@ -726,6 +882,62 @@ def compute_calibration_error(confidence: float, correctness: float) -> float:
         base_error += overconfidence_penalty
 
     return min(1.0, base_error)
+
+
+def compute_expected_calibration_error(
+    confidence_history: List[float],
+    correctness_history: List[float],
+    num_bins: int = 10
+) -> float:
+    """
+    Compute Expected Calibration Error (ECE) with confidence binning.
+
+    ECE measures how well-calibrated confidence estimates are across all predictions.
+    Lower ECE = better calibration. Perfect calibration = 0.0.
+
+    Args:
+        confidence_history: List of confidence scores (0-1)
+        correctness_history: List of correctness scores (0-1)
+        num_bins: Number of confidence bins (default 10)
+
+    Returns:
+        ECE score (0-1, lower is better)
+
+    Reference: Guo et al., "On Calibration of Modern Neural Networks" (ICML 2017)
+    """
+    if not confidence_history or not correctness_history:
+        return 0.0
+
+    try:
+        import numpy as np
+        confidence_arr = np.array(confidence_history)
+        correctness_arr = np.array(correctness_history)
+
+        # Create bins
+        bins = np.linspace(0, 1, num_bins + 1)
+        ece = 0.0
+
+        for i in range(num_bins):
+            # Find samples in this bin
+            if i == num_bins - 1:
+                # Include 1.0 in last bin
+                mask = (confidence_arr >= bins[i]) & (confidence_arr <= bins[i + 1])
+            else:
+                mask = (confidence_arr >= bins[i]) & (confidence_arr < bins[i + 1])
+
+            bin_count = mask.sum()
+            if bin_count > 0:
+                bin_confidence = confidence_arr[mask].mean()
+                bin_accuracy = correctness_arr[mask].mean()
+                # Weight by proportion of samples in this bin
+                ece += (bin_count / len(confidence_arr)) * abs(bin_accuracy - bin_confidence)
+
+        return float(min(1.0, ece))
+    except Exception:
+        # Fallback to simple calibration error
+        if len(confidence_history) == 0:
+            return 0.0
+        return sum(abs(c - r) for c, r in zip(confidence_history, correctness_history)) / len(confidence_history)
 
 
 def compute_semantic_consistency(answer: str, context: str, ground_truth: str) -> Tuple[float, Dict[str, Any]]:

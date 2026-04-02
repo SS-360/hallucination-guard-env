@@ -139,6 +139,13 @@ class HallucinationEnvironment(Environment[HallucinationAction, HallucinationObs
         self.current_streak: int = 0
         self.best_streak: int = 0
 
+        # Early stopping tracking (NEW)
+        self.consecutive_failures: int = 0
+        self.consecutive_hallucinations: int = 0
+        self.consecutive_perfect: int = 0
+        self.early_stop_reason: Optional[str] = None
+        self.calibration_history: List[float] = []
+
         # Curriculum state
         self.curriculum_stage: int = 0
         self.curriculum_performance: List[float] = []
@@ -227,6 +234,13 @@ class HallucinationEnvironment(Environment[HallucinationAction, HallucinationObs
         self.confidence_history = []
         self.hallucination_history = []
         self.current_streak = 0
+
+        # Reset early stopping counters
+        self.consecutive_failures = 0
+        self.consecutive_hallucinations = 0
+        self.consecutive_perfect = 0
+        self.early_stop_reason = None
+        self.calibration_history = []
 
         # Reset multi-turn state
         self.dialogue = MultiTurnDialogue() if enable_multi_turn else None
@@ -458,13 +472,26 @@ class HallucinationEnvironment(Environment[HallucinationAction, HallucinationObs
         if is_hallucination:
             self.total_hallucinations += 1
             self.current_streak = 0
+            self.consecutive_hallucinations += 1
+            self.consecutive_perfect = 0
         elif correctness > 0.7:
             self.total_correct += 1
             self.current_streak += 1
             self.best_streak = max(self.best_streak, self.current_streak)
+            self.consecutive_perfect += 1
+            self.consecutive_hallucinations = 0
+            self.consecutive_failures = 0
         else:
             self.total_partial += 1
             self.current_streak = 0
+            self.consecutive_perfect = 0
+            self.consecutive_hallucinations = 0
+            if reward < self.config.early_stopping_min_reward:
+                self.consecutive_failures += 1
+
+        # Track calibration history
+        calibration_error = abs(action.confidence - correctness)
+        self.calibration_history.append(calibration_error)
 
         # Track history
         self.reward_history.append(reward)
@@ -492,7 +519,18 @@ class HallucinationEnvironment(Environment[HallucinationAction, HallucinationObs
 
         # Move to next question
         self.step_count += 1
+
+        # Check for early stopping conditions
+        early_stop = self._check_early_stopping(is_hallucination, correctness, calibration_error)
+
+        # Determine if episode is done
         done = self.step_count >= self.config.max_questions_per_episode
+
+        if early_stop:
+            done = True
+            self.early_stop_reason = early_stop
+            self.episode_phase = EpisodePhase.COMPLETION
+            feedback += f" [Early stop: {early_stop}]"
 
         if not done:
             self.current_example = self.dataset_loader.get_example_for_step(self.step_count)
@@ -714,6 +752,41 @@ class HallucinationEnvironment(Environment[HallucinationAction, HallucinationObs
             }
         )
 
+    def _check_early_stopping(self, is_hallucination: bool, correctness: float, calibration_error: float) -> Optional[str]:
+        """
+        Check if episode should stop early based on performance conditions.
+
+        Returns:
+            str describing early stop reason, or None if should continue.
+        """
+        if not self.config.early_stopping_enabled:
+            return None
+
+        # Require minimum steps before early stopping
+        if self.step_count < 3:
+            return None
+
+        # 1. Hallucination cascade: too many consecutive hallucinations
+        if self.consecutive_hallucinations >= self.config.early_stopping_hallucination_cascade:
+            return f"hallucination_cascade ({self.consecutive_hallucinations} consecutive)"
+
+        # 2. Consecutive failures: poor performance
+        if self.consecutive_failures >= self.config.early_stopping_patience:
+            return f"consecutive_failures ({self.consecutive_failures} below {self.config.early_stopping_min_reward})"
+
+        # 3. Calibration failure: confidence systematically misaligned
+        if len(self.calibration_history) >= 5:
+            avg_calibration_error = sum(self.calibration_history[-5:]) / 5
+            if avg_calibration_error > self.config.early_stopping_calibration_failure:
+                return f"calibration_failure (avg error: {avg_calibration_error:.2f})"
+
+        # 4. Perfect run: early completion after consistent high performance
+        if self.consecutive_perfect >= self.config.early_stopping_perfect_run:
+            if self.step_count >= self.config.min_questions_for_completion:
+                return f"perfect_run ({self.consecutive_perfect} consecutive correct)"
+
+        return None
+
     def _get_context_for_observation(self, example: Optional[QAExample]) -> str:
         """Get context, potentially with partial revelation for challenges."""
         if not example:
@@ -726,39 +799,106 @@ class HallucinationEnvironment(Environment[HallucinationAction, HallucinationObs
         return example.context
 
     def _get_current_difficulty(self) -> DifficultyLevel:
-        """Determine current difficulty based on performance."""
+        """
+        Determine current difficulty based on performance with hysteresis.
+
+        Uses smooth difficulty scaling with:
+        - Stage-specific thresholds
+        - Minimum steps at each level (hysteresis)
+        - EXPERT level progression
+        """
         if not self.config.adaptive_difficulty:
             return self.config.initial_difficulty
 
-        # Calculate recent performance
-        recent_rewards = self.reward_history[-5:] if len(self.reward_history) >= 5 else self.reward_history
-        avg_recent_reward = sum(recent_rewards) / max(1, len(recent_rewards))
+        # Need enough history for reliable assessment
+        if len(self.reward_history) < 3:
+            return self.config.initial_difficulty
 
-        if avg_recent_reward > self.config.difficulty_threshold_increase:
-            if self.current_example and self.current_example.difficulty != DifficultyLevel.EXPERT:
-                return DifficultyLevel.ADVANCED
-        elif avg_recent_reward < self.config.difficulty_threshold_decrease:
-            return DifficultyLevel.INTERMEDIATE
+        # Calculate recent performance with exponential weighting
+        recent_rewards = self.reward_history[-10:] if len(self.reward_history) >= 10 else self.reward_history
+        avg_recent_reward = sum(recent_rewards) / len(recent_rewards)
 
-        return self.config.initial_difficulty
+        # Get current difficulty from example
+        current_difficulty = self.config.initial_difficulty
+        if self.current_example:
+            current_difficulty = self.current_example.difficulty
+
+        # Stage-specific mastery thresholds
+        mastery_thresholds = {
+            DifficultyLevel.BEGINNER: 0.60,
+            DifficultyLevel.INTERMEDIATE: 0.65,
+            DifficultyLevel.ADVANCED: 0.75,
+            DifficultyLevel.EXPERT: 0.85,
+        }
+
+        # Regression thresholds (lower than mastery to avoid oscillation)
+        regression_thresholds = {
+            DifficultyLevel.BEGINNER: 0.30,
+            DifficultyLevel.INTERMEDIATE: 0.40,
+            DifficultyLevel.ADVANCED: 0.50,
+            DifficultyLevel.EXPERT: 0.60,
+        }
+
+        # Difficulty progression order
+        difficulty_order = [
+            DifficultyLevel.BEGINNER,
+            DifficultyLevel.INTERMEDIATE,
+            DifficultyLevel.ADVANCED,
+            DifficultyLevel.EXPERT,
+        ]
+
+        current_idx = difficulty_order.index(current_difficulty) if current_difficulty in difficulty_order else 0
+
+        # Check for promotion
+        if avg_recent_reward > mastery_thresholds.get(current_difficulty, 0.7):
+            # Promote if not at EXPERT
+            if current_idx < len(difficulty_order) - 1:
+                return difficulty_order[current_idx + 1]
+
+        # Check for demotion
+        elif avg_recent_reward < regression_thresholds.get(current_difficulty, 0.4):
+            # Demote if not at BEGINNER
+            if current_idx > 0:
+                return difficulty_order[current_idx - 1]
+
+        return current_difficulty
 
     def _update_curriculum(self) -> None:
-        """Update curriculum stage based on episode performance."""
+        """
+        Update curriculum stage based on episode performance.
+
+        Supports:
+        - Advancement on sustained high performance
+        - Regression on sustained poor performance
+        - Stage-specific thresholds
+        """
         if not self.config.curriculum_enabled:
             return
 
         episode_reward = sum(self.reward_history) / max(1, len(self.reward_history))
         self.curriculum_performance.append(episode_reward)
 
-        # Check for curriculum advancement
-        if len(self.curriculum_performance) >= self.config.min_steps_per_curriculum_stage:
-            recent_avg = sum(self.curriculum_performance[-self.config.min_steps_per_curriculum_stage:]) / \
-                         self.config.min_steps_per_curriculum_stage
+        # Calculate statistics
+        avg_reward = sum(self.curriculum_performance) / len(self.curriculum_performance)
+        recent_rewards = self.curriculum_performance[-10:] if len(self.curriculum_performance) >= 10 else self.curriculum_performance
+        recent_avg = sum(recent_rewards) / len(recent_rewards)
 
-            if recent_avg > 0.7:
+        # Stage-specific thresholds
+        advancement_threshold = self.config.curriculum_mastery_threshold
+        regression_threshold = self.config.curriculum_regression_threshold
+
+        # Check for curriculum advancement (sustained high performance)
+        if len(self.curriculum_performance) >= self.config.min_steps_per_curriculum_stage:
+            if recent_avg > advancement_threshold:
                 self.curriculum_stage += 1
+                self.curriculum_performance = []  # Reset for next stage
+                logger.info(f"Advanced to curriculum stage {self.curriculum_stage} (avg: {recent_avg:.2f})")
+
+            # Check for curriculum regression (sustained poor performance)
+            elif recent_avg < regression_threshold and self.curriculum_stage > 0:
+                self.curriculum_stage = max(0, self.curriculum_stage - 1)
                 self.curriculum_performance = []
-                logger.info(f"Advanced to curriculum stage {self.curriculum_stage}")
+                logger.info(f"Regressed to curriculum stage {self.curriculum_stage} (avg: {recent_avg:.2f})")
 
     def _update_agent_profile(self) -> None:
         """Update the agent's long-term skill profile."""

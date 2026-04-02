@@ -281,6 +281,14 @@ class EnvironmentConfig(BaseModel):
     max_questions_per_episode: int = 10
     min_questions_for_completion: int = 5
 
+    # Early stopping configuration (NEW)
+    early_stopping_enabled: bool = True
+    early_stopping_patience: int = 3  # Consecutive failures before stopping
+    early_stopping_min_reward: float = 0.2  # Minimum reward to not count as failure
+    early_stopping_hallucination_cascade: int = 3  # Stop after N consecutive hallucinations
+    early_stopping_perfect_run: int = 5  # Complete early after N perfect answers
+    early_stopping_calibration_failure: float = 0.5  # Stop if calibration error exceeds this
+
     # Reward configuration
     reward_weights: Dict[str, float] = Field(default_factory=lambda: {
         "factual_correctness": 0.30,
@@ -296,6 +304,7 @@ class EnvironmentConfig(BaseModel):
     adaptive_difficulty: bool = True
     difficulty_threshold_increase: float = 0.7
     difficulty_threshold_decrease: float = 0.4
+    difficulty_hysteresis_steps: int = 5  # Minimum steps before difficulty change
 
     # Hallucination detection thresholds
     hallucination_threshold: float = 0.5
@@ -304,6 +313,8 @@ class EnvironmentConfig(BaseModel):
     # Curriculum configuration
     curriculum_enabled: bool = True
     min_steps_per_curriculum_stage: int = 50
+    curriculum_mastery_threshold: float = 0.75  # Avg reward to advance stage
+    curriculum_regression_threshold: float = 0.4  # Avg reward to regress stage
 
     # Multi-turn configuration
     enable_multi_turn: bool = False

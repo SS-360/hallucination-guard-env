@@ -584,6 +584,187 @@ python inference.py --episodes 3 --steps 5
 
 ---
 
+## 🔌 Integration Examples
+
+### OpenAI SDK Integration
+
+```python
+# examples/openai_integration.py
+from openai import OpenAI
+import requests
+
+client = OpenAI()
+ENV_URL = "https://samsankar-hallucination-guard-env.hf.space"
+
+def evaluate_with_gpt4(question: str, context: str) -> dict:
+    # Get answer from GPT-4
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{
+            "role": "user",
+            "content": f"Answer ONLY from context.\n\nContext: {context}\n\nQuestion: {question}\n\n"
+                       f"Return JSON: {{'answer': '...', 'confidence': 0.XX, 'source_quote': '...'}}"
+        }],
+        temperature=0.1
+    )
+
+    # Parse and submit to environment
+    import json
+    result = json.loads(response.choices[0].message.content)
+
+    step = requests.post(f"{ENV_URL}/step", json={
+        "answer": result["answer"],
+        "confidence": result["confidence"],
+        "source_quote": result["source_quote"]
+    })
+
+    return step.json()
+
+# See examples/openai_integration.py for full implementation
+```
+
+### Anthropic Claude Integration
+
+```python
+# examples/anthropic_integration.py
+from anthropic import Anthropic
+import requests
+
+client = Anthropic()
+ENV_URL = "https://samsankar-hallucination-guard-env.hf.space"
+
+def evaluate_with_claude(question: str, context: str) -> dict:
+    response = client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=500,
+        messages=[{
+            "role": "user",
+            "content": f"Answer using ONLY the provided context.\n\nContext: {context}\n\nQuestion: {question}"
+        }]
+    )
+
+    # Submit to environment
+    step = requests.post(f"{ENV_URL}/step", json={
+        "answer": response.content[0].text,
+        "confidence": 0.8,
+        "source_quote": ""
+    })
+
+    return step.json()
+
+# See examples/anthropic_integration.py for full implementation
+```
+
+### Batch Evaluation
+
+```bash
+# Run batch evaluation across all tasks
+python examples/batch_evaluation.py --episodes 5 --output results.json
+```
+
+---
+
+## 🚀 Production Deployment
+
+### Docker Compose (Multi-Service)
+
+```yaml
+# docker-compose.yml
+version: '3.8'
+
+services:
+  hallucination-guard:
+    build: .
+    ports:
+      - "7860:7860"
+    environment:
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7860/health"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 300s
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
+
+  # Optional: Redis for session caching
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+```
+
+### Kubernetes Deployment
+
+```yaml
+# k8s/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hallucination-guard-env
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: hallucination-guard
+  template:
+    metadata:
+      labels:
+        app: hallucination-guard
+    spec:
+      containers:
+      - name: server
+        image: hallucination-guard:latest
+        ports:
+        - containerPort: 7860
+        resources:
+          limits:
+            memory: "4Gi"
+            cpu: "2"
+          requests:
+            memory: "2Gi"
+            cpu: "1"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 7860
+          initialDelaySeconds: 300
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 7860
+          initialDelaySeconds: 60
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hallucination-guard-service
+spec:
+  selector:
+    app: hallucination-guard
+  ports:
+  - port: 80
+    targetPort: 7860
+  type: LoadBalancer
+```
+
+### Environment Configuration
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `USE_LARGE_NLI` | Use large NLI model (more accurate, more memory) | `false` |
+| `MAX_QUESTIONS` | Maximum questions per episode | `10` |
+| `LOG_LEVEL` | Logging level | `INFO` |
+
+---
+
 ## 🔗 Links
 
 | | |

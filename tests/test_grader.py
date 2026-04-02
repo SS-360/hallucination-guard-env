@@ -310,3 +310,244 @@ class TestRefusalHandling:
         )
         assert reward < 0.5
         assert info.get("is_refusal") == True
+
+
+class TestEdgeCases:
+    """Tests for edge cases and robustness."""
+
+    def test_empty_answer_with_high_confidence(self):
+        """Empty answer with high confidence should be heavily penalized."""
+        reward, info = calculate_reward(
+            answer="",
+            confidence=0.95,
+            source_quote="",
+            context="The capital of France is Paris.",
+            ground_truth="Paris",
+            difficulty_level="beginner"
+        )
+        assert reward < 0.3
+        assert info.get("is_hallucination") == True or info.get("correctness", 0) < 0.3
+
+    def test_very_long_answer(self):
+        """Very long answers should be handled gracefully."""
+        long_answer = "Paris is the capital of France. " * 100
+        reward, info = calculate_reward(
+            answer=long_answer,
+            confidence=0.8,
+            source_quote="capital of France is Paris",
+            context="The capital of France is Paris.",
+            ground_truth="Paris",
+            difficulty_level="beginner"
+        )
+        assert 0.0 <= reward <= 1.0
+        assert "correctness" in info
+
+    def test_unicode_handling(self):
+        """Unicode characters should be handled correctly."""
+        reward, info = calculate_reward(
+            answer="Tōkyō has 13 million people.",
+            confidence=0.8,
+            source_quote="Tōkyō population",
+            context="Tōkyō has a population of 13 million people.",
+            ground_truth="13 million",
+            difficulty_level="intermediate"
+        )
+        assert 0.0 <= reward <= 1.0
+
+    def test_numerical_tolerance(self):
+        """Approximate numbers should have some tolerance."""
+        reward1, _ = calculate_reward(
+            answer="The population is approximately 50,000.",
+            confidence=0.8,
+            source_quote="population of 50,000",
+            context="The city has a population of 50,000.",
+            ground_truth="50,000",
+            difficulty_level="beginner"
+        )
+        reward2, _ = calculate_reward(
+            answer="The population is about 50,000.",
+            confidence=0.8,
+            source_quote="population of 50,000",
+            context="The city has a population of 50,000.",
+            ground_truth="50,000",
+            difficulty_level="beginner"
+        )
+        # Both should receive similar scores
+        assert abs(reward1 - reward2) < 0.15
+
+    def test_multi_part_answer(self):
+        """Multi-part answers should be evaluated correctly."""
+        reward, info = calculate_reward(
+            answer="Paris is the capital, and Lyon is the second largest city.",
+            confidence=0.8,
+            source_quote="capital is Paris",
+            context="The capital of France is Paris. Lyon is the second largest city.",
+            ground_truth="Paris",
+            difficulty_level="intermediate"
+        )
+        assert 0.0 <= reward <= 1.0
+        # Should not be penalized for providing extra accurate info
+
+    def test_markdown_in_answer(self):
+        """Markdown formatting should not affect scoring."""
+        reward1, _ = calculate_reward(
+            answer="**Paris** is the capital.",
+            confidence=0.8,
+            source_quote="capital is Paris",
+            context="The capital of France is Paris.",
+            ground_truth="Paris",
+            difficulty_level="beginner"
+        )
+        reward2, _ = calculate_reward(
+            answer="Paris is the capital.",
+            confidence=0.8,
+            source_quote="capital is Paris",
+            context="The capital of France is Paris.",
+            ground_truth="Paris",
+            difficulty_level="beginner"
+        )
+        # Should handle markdown gracefully
+        assert abs(reward1 - reward2) < 0.1
+
+    def test_contradictory_answer(self):
+        """Contradictory answers should be penalized."""
+        reward, info = calculate_reward(
+            answer="The capital is NOT Paris.",
+            confidence=0.9,
+            source_quote="capital of France",
+            context="The capital of France is Paris.",
+            ground_truth="Paris",
+            difficulty_level="beginner"
+        )
+        assert reward < 0.4
+        assert info.get("is_hallucination") == True or info.get("correctness", 1) < 0.5
+
+    def test_hedging_language(self):
+        """Hedging language should affect confidence scoring."""
+        reward_hedged, _ = calculate_reward(
+            answer="The answer might be Paris, approximately.",
+            confidence=0.5,
+            source_quote="capital is Paris",
+            context="The capital of France is Paris.",
+            ground_truth="Paris",
+            difficulty_level="beginner"
+        )
+        reward_confident, _ = calculate_reward(
+            answer="The answer is Paris.",
+            confidence=0.9,
+            source_quote="capital is Paris",
+            context="The capital of France is Paris.",
+            ground_truth="Paris",
+            difficulty_level="beginner"
+        )
+        # Both should be correct, but hedging may affect confidence scoring
+        assert 0.0 <= reward_hedged <= 1.0
+
+    def test_partial_entity_match(self):
+        """Partial entity matches should be scored appropriately."""
+        reward, info = calculate_reward(
+            answer="William Shakespeare wrote it.",
+            confidence=0.8,
+            source_quote="written by Shakespeare",
+            context="The play was written by Shakespeare.",
+            ground_truth="Shakespeare",
+            difficulty_level="beginner"
+        )
+        assert reward >= 0.6  # Should still get credit for correct entity
+
+
+class TestCalibrationMetrics:
+    """Tests for calibration and confidence metrics."""
+
+    def test_well_calibrated_answer(self):
+        """Well-calibrated confidence should score high."""
+        reward, info = calculate_reward(
+            answer="Paris",
+            confidence=0.9,
+            source_quote="capital is Paris",
+            context="The capital of France is Paris.",
+            ground_truth="Paris",
+            difficulty_level="beginner"
+        )
+        assert info["calibration"] >= 0.7
+
+    def test_overconfident_wrong_answer(self):
+        """Overconfident wrong answers should be heavily penalized."""
+        reward_confident, info_confident = calculate_reward(
+            answer="London",
+            confidence=0.95,
+            source_quote="",
+            context="The capital of France is Paris.",
+            ground_truth="Paris",
+            difficulty_level="beginner"
+        )
+        reward_uncertain, _ = calculate_reward(
+            answer="London",
+            confidence=0.3,
+            source_quote="",
+            context="The capital of France is Paris.",
+            ground_truth="Paris",
+            difficulty_level="beginner"
+        )
+        # Overconfident wrong should score lower
+        assert reward_confident < reward_uncertain
+        assert info_confident.get("is_hallucination") == True
+
+    def test_expected_calibration_error(self):
+        """Test ECE computation with history."""
+        from server.grader import compute_expected_calibration_error
+
+        # Perfect calibration
+        confidence_history = [0.9, 0.8, 0.7, 0.6]
+        correctness_history = [0.9, 0.8, 0.7, 0.6]
+        ece = compute_expected_calibration_error(confidence_history, correctness_history)
+        assert ece < 0.1
+
+        # Poor calibration
+        confidence_history = [0.9, 0.9, 0.9, 0.9]
+        correctness_history = [0.3, 0.3, 0.3, 0.3]
+        ece = compute_expected_calibration_error(confidence_history, correctness_history)
+        assert ece > 0.3
+
+
+class TestHallucinationTypes:
+    """Tests for different hallucination types."""
+
+    def test_fabricated_fact_detection(self):
+        """Fabricated facts should be detected."""
+        reward, info = calculate_reward(
+            answer="The moon is made of green cheese.",
+            confidence=0.9,
+            source_quote="",
+            context="The moon orbits Earth.",
+            ground_truth="rock",
+            difficulty_level="advanced"
+        )
+        assert info.get("is_hallucination") == True
+        assert info.get("hallucination_type") in ["fabricated_fact", "overconfident_wrong"]
+
+    def test_numerical_fabrication_detection(self):
+        """Fabricated numbers should be detected."""
+        reward, info = calculate_reward(
+            answer="The population is 500 million.",
+            confidence=0.8,
+            source_quote="population",
+            context="The city has a population of 50,000.",
+            ground_truth="50,000",
+            difficulty_level="intermediate"
+        )
+        # Should detect numerical discrepancy
+        assert info.get("is_hallucination") == True or "number" in str(info.get("correctness_analysis", "")).lower()
+
+    def test_entity_confusion_detection(self):
+        """Entity confusion should be detected."""
+        reward, info = calculate_reward(
+            answer="London is the capital of France.",
+            confidence=0.8,
+            source_quote="capital of France",
+            context="The capital of France is Paris.",
+            ground_truth="Paris",
+            difficulty_level="beginner"
+        )
+        assert info.get("is_hallucination") == True
+        assert reward < 0.5
