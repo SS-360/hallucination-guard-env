@@ -699,7 +699,7 @@ class HallucinationEnvironment(Environment[HallucinationAction, HallucinationObs
             attempts_remaining=max(0, self.config.max_questions_per_episode - self.step_count),
             current_streak=self.current_streak,
             best_streak=self.best_streak,
-            difficulty_level=self._get_current_difficulty(),
+            difficulty_level=self._get_current_difficulty().value,
             curriculum_progress=self.step_count / max(1, self.config.max_questions_per_episode),
             skill_rating=self.skill_rating,
             dialogue=self.dialogue,
