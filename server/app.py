@@ -1526,6 +1526,8 @@ async def reset(body: Dict[str, Any] = {}):
         obs = env.reset(**{k: v for k, v in body.items() if k in ("seed", "episode_id", "difficulty")})
         return JSONResponse(content=_safe_dict(obs))
     except Exception as e:
+        import traceback
+        logger.error(f"Reset error: {e}\n{traceback.format_exc()}")
         raise HTTPException(500, str(e))
 
 @app.post("/step", tags=["Environment"])
