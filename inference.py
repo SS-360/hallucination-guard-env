@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 inference.py — HallucinationGuard-Env Inference Script
 =======================================================
@@ -31,6 +32,9 @@ Expected baseline scores (heuristic agent, seed=42, 3 episodes x 5 steps):
 from __future__ import annotations
 
 import os
+# Fix Unicode encoding for Windows console
+os.environ['PYTHONIOENCODING'] = 'utf-8'
+
 import sys
 import json
 import time
@@ -65,8 +69,10 @@ def log_step(step: int, action: str, reward: float, done: bool, error: Optional[
     """Emit [STEP] log in required format."""
     error_val = error if error else "null"
     done_val = str(done).lower()
-    # Truncate action if too long
+    # Truncate action if too long and handle Unicode
     action_trunc = action[:200].replace("\n", " ") if len(action) > 200 else action.replace("\n", " ")
+    # Replace non-ASCII characters to avoid encoding issues
+    action_trunc = action_trunc.encode('ascii', 'replace').decode('ascii')
     print(f"[STEP] step={step} action={action_trunc} reward={reward:.2f} done={done_val} error={error_val}", flush=True)
 
 
@@ -447,10 +453,11 @@ def main():
     print(f"Elapsed    : {elapsed:.1f}s")
     print()
     for t in task_results:
-        bar = "█" * round(t["avg_score"] * 20)
+        # Use ASCII characters for progress bar
+        bar = "#" * round(t["avg_score"] * 20)
         print(
             f"  {t['task_id']:<42} "
-            f"{t['avg_score']:.4f} ± {t['std_score']:.4f}  |{bar:<20}|"
+            f"{t['avg_score']:.4f} +- {t['std_score']:.4f}  |{bar:<20}|"
         )
     print()
     print(f"  {'OVERALL':<42} {overall_score:.4f}")
