@@ -46,6 +46,42 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+# ── Structured stdout logging for hackathon evaluation ──────────────────────────
+def emit_start(model: str, task_id: str, episode: int, seed: int) -> None:
+    """Emit [START] log in required format."""
+    print(f"[START] model={model} task={task_id} episode={episode} seed={seed}", flush=True)
+
+
+def emit_step(
+    episode: int,
+    step: int,
+    question: str,
+    answer: str,
+    confidence: float,
+    source_quote: str,
+    reward: float,
+    is_hallucination: bool,
+) -> None:
+    """Emit [STEP] log in required format."""
+    # Truncate long strings for readability
+    q_trunc = question[:100].replace("\n", " ") + ("..." if len(question) > 100 else "")
+    a_trunc = answer[:100].replace("\n", " ") + ("..." if len(answer) > 100 else "")
+    sq_trunc = source_quote[:80].replace("\n", " ") + ("..." if len(source_quote) > 80 else "")
+    hall_str = "true" if is_hallucination else "false"
+    print(
+        f"[STEP] episode={episode} step={step} "
+        f'question="{q_trunc}" answer="{a_trunc}" '
+        f"confidence={confidence:.3f} source_quote=\"{sq_trunc}\" "
+        f"reward={reward:.4f} is_hallucination={hall_str}",
+        flush=True,
+    )
+
+
+def emit_end(task_id: str, episode: int, score: float, avg_reward: float) -> None:
+    """Emit [END] log in required format."""
+    print(f"[END] task={task_id} episode={episode} score={score:.4f} avg_reward={avg_reward:.4f}", flush=True)
+
 # ── Mandatory environment variables ──────────────────────────────────────────
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
 MODEL_NAME   = os.getenv("MODEL_NAME",   "Qwen/Qwen2.5-72B-Instruct")
@@ -219,8 +255,12 @@ def run_episode(
     steps:       int,
     seed:        int,
     episode_num: int,
+    model_label: str,
 ) -> Dict[str, Any]:
     """Run one episode and return rewards + infos for the grader."""
+    # Emit START log
+    emit_start(model=model_label, task_id=task_id, episode=episode_num + 1, seed=seed + episode_num)
+
     obs = env.reset(difficulty=difficulty, seed=seed + episode_num)
     step_rewards: List[float]         = []
     step_infos:   List[Dict[str, Any]] = []
@@ -250,6 +290,18 @@ def run_episode(
             "is_hallucination":    bool(obs.get("is_hallucination", False)),
         })
 
+        # Emit STEP log
+        emit_step(
+            episode=episode_num + 1,
+            step=step_n + 1,
+            question=question,
+            answer=action["answer"],
+            confidence=action["confidence"],
+            source_quote=action["source_quote"],
+            reward=reward,
+            is_hallucination=bool(obs.get("is_hallucination", False)),
+        )
+
         status = "HALLUCINATION" if obs.get("is_hallucination") else "OK"
         logger.info(
             f"  [{task_id[:25]}] ep={episode_num+1} step={step_n+1} "
@@ -257,9 +309,15 @@ def run_episode(
         )
 
     grade = env.grade(task_id, step_rewards, step_infos)
+    episode_score = grade.get("score", 0.0)
+    avg_reward = sum(step_rewards) / max(len(step_rewards), 1)
+
+    # Emit END log
+    emit_end(task_id=task_id, episode=episode_num + 1, score=episode_score, avg_reward=avg_reward)
+
     return {
         "episode": episode_num + 1,
-        "score":   grade.get("score", 0.0),
+        "score":   episode_score,
         "rewards": step_rewards,
         "grade":   grade,
     }
@@ -335,6 +393,7 @@ def main():
                 steps=args.steps,
                 seed=args.seed,
                 episode_num=ep,
+                model_label=model_label,
             )
             episode_scores.append(ep_result["score"])
             all_scores.append(ep_result["score"])
