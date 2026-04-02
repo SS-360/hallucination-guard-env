@@ -48,39 +48,32 @@ logger = logging.getLogger(__name__)
 
 
 # ── Structured stdout logging for hackathon evaluation ──────────────────────────
-def emit_start(model: str, task_id: str, episode: int, seed: int) -> None:
+# Required format:
+# [START] task=<task_name> env=<benchmark> model=<model_name>
+# [STEP] step=<n> action=<action_str> reward=<0.00> done=<true|false> error=<msg|null>
+# [END] success=<true|false> steps=<n> score=<score> rewards=<r1,r2,...,rn>
+
+BENCHMARK = "hallucination-guard-env"
+
+
+def log_start(task: str, env: str, model: str) -> None:
     """Emit [START] log in required format."""
-    print(f"[START] model={model} task={task_id} episode={episode} seed={seed}", flush=True)
+    print(f"[START] task={task} env={env} model={model}", flush=True)
 
 
-def emit_step(
-    episode: int,
-    step: int,
-    question: str,
-    answer: str,
-    confidence: float,
-    source_quote: str,
-    reward: float,
-    is_hallucination: bool,
-) -> None:
+def log_step(step: int, action: str, reward: float, done: bool, error: Optional[str] = None) -> None:
     """Emit [STEP] log in required format."""
-    # Truncate long strings for readability
-    q_trunc = question[:100].replace("\n", " ") + ("..." if len(question) > 100 else "")
-    a_trunc = answer[:100].replace("\n", " ") + ("..." if len(answer) > 100 else "")
-    sq_trunc = source_quote[:80].replace("\n", " ") + ("..." if len(source_quote) > 80 else "")
-    hall_str = "true" if is_hallucination else "false"
-    print(
-        f"[STEP] episode={episode} step={step} "
-        f'question="{q_trunc}" answer="{a_trunc}" '
-        f"confidence={confidence:.3f} source_quote=\"{sq_trunc}\" "
-        f"reward={reward:.4f} is_hallucination={hall_str}",
-        flush=True,
-    )
+    error_val = error if error else "null"
+    done_val = str(done).lower()
+    # Truncate action if too long
+    action_trunc = action[:200].replace("\n", " ") if len(action) > 200 else action.replace("\n", " ")
+    print(f"[STEP] step={step} action={action_trunc} reward={reward:.2f} done={done_val} error={error_val}", flush=True)
 
 
-def emit_end(task_id: str, episode: int, score: float, avg_reward: float) -> None:
+def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
     """Emit [END] log in required format."""
-    print(f"[END] task={task_id} episode={episode} score={score:.4f} avg_reward={avg_reward:.4f}", flush=True)
+    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
+    print(f"[END] success={str(success).lower()} steps={steps} score={score:.3f} rewards={rewards_str}", flush=True)
 
 # ── Mandatory environment variables ──────────────────────────────────────────
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
@@ -258,8 +251,9 @@ def run_episode(
     model_label: str,
 ) -> Dict[str, Any]:
     """Run one episode and return rewards + infos for the grader."""
-    # Emit START log
-    emit_start(model=model_label, task_id=task_id, episode=episode_num + 1, seed=seed + episode_num)
+    # Emit START log at beginning of each task
+    if episode_num == 0:
+        log_start(task=task_id, env=BENCHMARK, model=model_label)
 
     obs = env.reset(difficulty=difficulty, seed=seed + episode_num)
     step_rewards: List[float]         = []
@@ -281,6 +275,7 @@ def run_episode(
         )
 
         reward = float(obs.get("reward") or 0.0)
+        done = bool(obs.get("done", False))
         step_rewards.append(reward)
         step_infos.append({
             "correctness":         obs.get("grounding_score", 0.0),
@@ -290,16 +285,16 @@ def run_episode(
             "is_hallucination":    bool(obs.get("is_hallucination", False)),
         })
 
+        # Format action for logging (truncated answer)
+        action_str = f'answer="{action["answer"][:100]}" confidence={action["confidence"]:.2f}'
+
         # Emit STEP log
-        emit_step(
-            episode=episode_num + 1,
+        log_step(
             step=step_n + 1,
-            question=question,
-            answer=action["answer"],
-            confidence=action["confidence"],
-            source_quote=action["source_quote"],
+            action=action_str,
             reward=reward,
-            is_hallucination=bool(obs.get("is_hallucination", False)),
+            done=done,
+            error=None,
         )
 
         status = "HALLUCINATION" if obs.get("is_hallucination") else "OK"
@@ -310,10 +305,6 @@ def run_episode(
 
     grade = env.grade(task_id, step_rewards, step_infos)
     episode_score = grade.get("score", 0.0)
-    avg_reward = sum(step_rewards) / max(len(step_rewards), 1)
-
-    # Emit END log
-    emit_end(task_id=task_id, episode=episode_num + 1, score=episode_score, avg_reward=avg_reward)
 
     return {
         "episode": episode_num + 1,
@@ -383,6 +374,7 @@ def main():
         logger.info(f"{'='*55}")
 
         episode_scores: List[float] = []
+        task_rewards: List[float] = []
 
         for ep in range(args.episodes):
             ep_result = run_episode(
@@ -398,12 +390,22 @@ def main():
             episode_scores.append(ep_result["score"])
             all_scores.append(ep_result["score"])
             all_rewards.extend(ep_result["rewards"])
+            task_rewards.extend(ep_result["rewards"])
             total_steps += len(ep_result["rewards"])
 
         task_avg = sum(episode_scores) / max(len(episode_scores), 1)
         task_std = (
             (sum((s - task_avg) ** 2 for s in episode_scores) / max(len(episode_scores), 1)) ** 0.5
             if len(episode_scores) > 1 else 0.0
+        )
+
+        # Emit [END] log for this task
+        success = task_avg >= 0.5  # Consider success if score >= 0.5
+        log_end(
+            success=success,
+            steps=len(task_rewards),
+            score=task_avg,
+            rewards=task_rewards,
         )
 
         task_results.append({
