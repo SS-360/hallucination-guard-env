@@ -216,6 +216,8 @@ def openai_agent(model: str, base_url: str, api_key: str) -> Callable:
             context=context[:3000],
             question=question,
         )
+
+        # First try with JSON response format
         try:
             resp = client.chat.completions.create(
                 model=model,
@@ -224,10 +226,10 @@ def openai_agent(model: str, base_url: str, api_key: str) -> Callable:
                     {"role": "user",   "content": prompt},
                 ],
                 temperature=0.0,
-                max_tokens=256,
+                max_tokens=512,  # Increased from 256 to allow complete JSON
                 response_format={"type": "json_object"},
             )
-            raw    = resp.choices[0].message.content or "{}"
+            raw = resp.choices[0].message.content or "{}"
             parsed = json.loads(raw)
             return {
                 "answer":       str(parsed.get("answer", "")),
@@ -238,8 +240,42 @@ def openai_agent(model: str, base_url: str, api_key: str) -> Callable:
             raw_text = resp.choices[0].message.content or ""
             return {"answer": raw_text[:200], "confidence": 0.4, "source_quote": ""}
         except Exception as e:
-            logger.warning(f"LLM call failed: {e}")
-            return {"answer": "", "confidence": 0.0, "source_quote": ""}
+            # Fallback: try without response_format for models that don't support it
+            error_msg = str(e)
+            if "json_validate_failed" in error_msg or "response_format" in error_msg.lower():
+                logger.warning(f"JSON format failed, trying without response_format: {e}")
+                try:
+                    resp = client.chat.completions.create(
+                        model=model,
+                        messages=[
+                            {"role": "system", "content": SYSTEM_PROMPT},
+                            {"role": "user",   "content": prompt},
+                        ],
+                        temperature=0.0,
+                        max_tokens=512,
+                    )
+                    raw = resp.choices[0].message.content or "{}"
+                    # Try to extract JSON from response
+                    import re
+                    json_match = re.search(r'\{[^{}]*"answer"[^{}]*\}', raw, re.DOTALL)
+                    if json_match:
+                        try:
+                            parsed = json.loads(json_match.group(0))
+                            return {
+                                "answer": str(parsed.get("answer", "")),
+                                "confidence": float(parsed.get("confidence", 0.5)),
+                                "source_quote": str(parsed.get("source_quote", "")),
+                            }
+                        except:
+                            pass
+                    # If no valid JSON found, use raw text
+                    return {"answer": raw[:200], "confidence": 0.4, "source_quote": ""}
+                except Exception as e2:
+                    logger.warning(f"Fallback LLM call also failed: {e2}")
+                    return {"answer": "", "confidence": 0.0, "source_quote": ""}
+            else:
+                logger.warning(f"LLM call failed: {e}")
+                return {"answer": "", "confidence": 0.0, "source_quote": ""}
 
     return _call
 
