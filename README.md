@@ -490,12 +490,12 @@ python inference.py --heuristic --episodes 3 --steps 5 --seed 42 --env-url http:
 
 | Task | Score | Std Dev |
 |------|-------|---------|
-| task_1_factual_grounding | 0.29 | ±0.15 |
-| task_2_multi_hop_synthesis | 0.25 | ±0.14 |
-| task_3_adversarial_resistance | 0.22 | ±0.16 |
-| **Overall** | **0.25** | - |
+| task_1_factual_grounding | 0.12 | ±0.05 |
+| task_2_multi_hop_synthesis | 0.08 | ±0.03 |
+| task_3_adversarial_resistance | 0.04 | ±0.03 |
+| **Overall** | **0.08** | - |
 
-> **Note**: Scores are reproducible with `--seed 42`. The heuristic intentionally returns the first sentence of context — it's meant to be a weak baseline, not a competitive benchmark. It ignores the question, uses a fixed confidence (0.6), and provides an irrelevant source quote (first 80 chars). Real LLMs should score 1.5-2x higher by actually reading questions and finding relevant context.
+> **Note**: Scores are reproducible with `--seed 42`. The heuristic intentionally returns the first sentence of context — it's meant to be a weak baseline, not a competitive benchmark. It ignores the question, uses a fixed confidence (0.6), and provides an irrelevant source quote (first 80 chars). Real LLMs should score 2-3x higher by actually reading questions and finding relevant context.
 
 ### LLM Baseline (requires API key)
 
@@ -515,37 +515,51 @@ We tested multiple LLMs on this benchmark (3 episodes × 5 steps, seed=42):
 
 | Rank | Model | Provider | Overall Score | Task 1 | Task 2 | Task 3 | Time |
 |------|-------|----------|---------------|--------|--------|--------|------|
-| 🥇 | Llama 3.3 70B | Groq (cloud) | **0.462** | 0.499 | 0.431 | 0.458 | 95s |
-| 🥈 | Qwen2.5:7B | Ollama (local CPU) | **0.427** | 0.497 | 0.339 | 0.444 | 555s |
-| 🥉 | Nemotron 3 Super | OpenRouter (cloud) | **0.418** | 0.612 | 0.397 | ~0.38 | 771s |
-| 4 | Llama 3.1 8B | Groq (cloud) | 0.406 | 0.437 | 0.419 | 0.363 | 145s |
-| 5 | Heuristic baseline | — | 0.25 | 0.29 | 0.25 | 0.22 | 61s |
-
-*\*Nemotron Task 3 score is estimated based on Task 1-2 performance.*
+| 🥇 | qwen/qwen3-32b | Groq (cloud) | **0.51** | 0.56 | 0.48 | 0.47 | 277s |
+| 🥈 | Llama 3.3 70B | Groq (cloud) | **0.45** | 0.52 | 0.43 | 0.41 | 45s |
+| 🥉 | Llama 3.1 8B | Groq (cloud) | **0.42** | 0.48 | 0.40 | 0.38 | 40s |
+| 4 | GLM-4.5-Air | OpenRouter (cloud) | **0.26** | 0.22 | 0.34 | 0.23 | 960s |
+| 5 | Qwen2.5-72B-Instruct | HF Router (cloud) | **0.24** | 0.28 | 0.13 | 0.31 | 161s |
+| - | Heuristic baseline | — | 0.08 | 0.12 | 0.08 | 0.04 | 24s |
 
 **Key Findings:**
-- **Groq Llama 3.3 70B** is the fastest and most accurate for cloud inference
-- **Local Qwen2.5:7B on CPU** achieves 92% of Groq's performance — excellent for privacy-sensitive applications
-- Local inference requires ~6x longer than cloud but runs entirely offline
+- **Groq qwen/qwen3-32b** achieves the highest score (0.51), exceeding the 0.20 hackathon requirement by 2.5x
+- **Groq Llama 3.3 70B** offers excellent speed/quality tradeoff — 0.45 score in just 45s
+- **Groq Llama 3.1 8B** punches above its weight — 0.42 score despite being an 8B model
+- All tested LLMs beat the heuristic baseline by 3-6x
+- Scores above 0.40 indicate strong hallucination avoidance capabilities
 
-#### Running with Ollama (Local)
+#### Running with HuggingFace Router (Recommended)
 
 ```bash
-# Install and pull model
-ollama pull qwen2.5:7b
+# Set environment variables
+export API_BASE_URL=https://router.huggingface.co/v1
+export MODEL_NAME=Qwen/Qwen2.5-72B-Instruct
+export HF_TOKEN=hf_your_token_here
 
-# Run inference (local)
-API_BASE_URL=http://localhost:11434/v1 MODEL_NAME=qwen2.5:7b HF_TOKEN=ollama \
-  python inference.py --env-url http://localhost:7860 --episodes 3 --steps 5
+# Run inference
+python inference.py --env-url http://localhost:7860 --episodes 3 --steps 5 --seed 42
 ```
 
-#### Running with Groq (Cloud)
+#### Running with Groq (Cloud - Best Performance)
 
 ```bash
 # Set environment variables
 export API_BASE_URL=https://api.groq.com/openai/v1
-export MODEL_NAME=llama-3.3-70b-versatile
+export MODEL_NAME=qwen/qwen3-32b
 export HF_TOKEN=gsk_your_key_here
+
+# Run inference
+python inference.py --env-url http://localhost:7860 --episodes 3 --steps 5 --seed 42
+```
+
+#### Running with OpenRouter (Cloud)
+
+```bash
+# Set environment variables
+export API_BASE_URL=https://openrouter.ai/api/v1
+export MODEL_NAME=nvidia/nemotron-3-super-120b-a12b:free  # or z-ai/glm-4.5-air:free
+export HF_TOKEN=sk-or-v1-your_key_here
 
 # Run inference
 python inference.py --env-url http://localhost:7860 --episodes 3 --steps 5 --seed 42
