@@ -520,7 +520,7 @@ We tested multiple LLMs on this benchmark (3 episodes × 5 steps, seed=42):
 | 🥉 | Llama 3.1 8B | Groq (cloud) | **0.42** | 0.48 | 0.40 | 0.38 | 40s |
 | 4 | GLM-4.5-Air | OpenRouter (cloud) | **0.26** | 0.22 | 0.34 | 0.23 | 960s |
 | 5 | Qwen2.5-72B-Instruct | HF Router (cloud) | **0.24** | 0.28 | 0.13 | 0.31 | 161s |
-| - | Heuristic baseline | — | 0.08 | 0.12 | 0.08 | 0.04 | 24s |
+| - | Heuristic baseline (avg) | — | ~0.12 | ~0.16 | ~0.05 | ~0.16 | ~30s |
 
 **Key Findings:**
 - **Groq qwen/qwen3-32b** achieves the highest score (0.51), exceeding the 0.20 hackathon requirement by 2.5x
