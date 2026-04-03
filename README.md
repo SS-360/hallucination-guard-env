@@ -1,22 +1,22 @@
 ---
 title: HallucinationGuard-Env
 emoji: 🛡️
-colorFrom: gray
-colorTo: blue
+colorFrom: green
+colorTo: yellow
 sdk: docker
 app_port: 7860
 pinned: true
 tags:
-  - openenv
-  - reinforcement-learning
-  - hallucination-detection
-  - grounded-generation
-  - question-answering
-  - fact-checking
-  - llm-training
-  - llm-evaluation
-  - benchmark
-  - ai-safety
+- openenv
+- reinforcement-learning
+- hallucination-detection
+- grounded-generation
+- question-answering
+- fact-checking
+- llm-training
+- llm-evaluation
+- benchmark
+- ai-safety
 ---
 
 # 🛡️ HallucinationGuard-Env v4.2
@@ -490,10 +490,10 @@ python inference.py --heuristic --episodes 3 --steps 5 --seed 42 --env-url http:
 
 | Task | Score | Std Dev |
 |------|-------|---------|
-| task_1_factual_grounding | 0.12 | ±0.05 |
-| task_2_multi_hop_synthesis | 0.08 | ±0.03 |
-| task_3_adversarial_resistance | 0.04 | ±0.03 |
-| **Overall** | **0.08** | - |
+| task_1_factual_grounding | ~0.16 | ±0.05 |
+| task_2_multi_hop_synthesis | ~0.05 | ±0.03 |
+| task_3_adversarial_resistance | ~0.16 | ±0.03 |
+| **Overall** | **~0.12** | - |
 
 > **Note**: Scores are reproducible with `--seed 42`. The heuristic intentionally returns the first sentence of context — it's meant to be a weak baseline, not a competitive benchmark. It ignores the question, uses a fixed confidence (0.6), and provides an irrelevant source quote (first 80 chars). Real LLMs should score 2-3x higher by actually reading questions and finding relevant context.
 
@@ -520,7 +520,7 @@ We tested multiple LLMs on this benchmark (3 episodes × 5 steps, seed=42):
 | 🥉 | Llama 3.1 8B | Groq (cloud) | **0.42** | 0.48 | 0.40 | 0.38 | 40s |
 | 4 | GLM-4.5-Air | OpenRouter (cloud) | **0.26** | 0.22 | 0.34 | 0.23 | 960s |
 | 5 | Qwen2.5-72B-Instruct | HF Router (cloud) | **0.24** | 0.28 | 0.13 | 0.31 | 161s |
-| - | Heuristic baseline (avg) | — | ~0.12 | ~0.16 | ~0.05 | ~0.16 | ~30s |
+| - | Heuristic baseline (avg) | — | **~0.12** | ~0.16 | ~0.05 | ~0.16 | ~30s |
 
 **Key Findings:**
 - **Groq qwen/qwen3-32b** achieves the highest score (0.51), exceeding the 0.20 hackathon requirement by 2.5x
