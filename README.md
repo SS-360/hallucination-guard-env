@@ -1,24 +1,3 @@
----
-title: HallucinationGuard-Env
-emoji: 🛡️
-colorFrom: blue
-colorTo: green
-sdk: docker
-app_port: 7860
-pinned: true
-tags:
-  - openenv
-  - reinforcement-learning
-  - hallucination-detection
-  - grounded-generation
-  - question-answering
-  - fact-checking
-  - llm-training
-  - llm-evaluation
-  - benchmark
-  - ai-safety
----
-
 # 🛡️ HallucinationGuard-Env
 
 > **The production-grade OpenEnv RL environment for training and evaluating LLMs on hallucination avoidance.**
