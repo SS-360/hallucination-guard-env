@@ -1,22 +1,22 @@
 ---
 title: HallucinationGuard-Env
 emoji: 🛡️
-colorFrom: blue
-colorTo: green
+colorFrom: gray
+colorTo: blue
 sdk: docker
 app_port: 7860
 pinned: true
 tags:
-- openenv
-- reinforcement-learning
-- hallucination-detection
-- grounded-generation
-- question-answering
-- fact-checking
-- llm-training
-- llm-evaluation
-- benchmark
-- ai-safety
+  - openenv
+  - reinforcement-learning
+  - hallucination-detection
+  - grounded-generation
+  - question-answering
+  - fact-checking
+  - llm-training
+  - llm-evaluation
+  - benchmark
+  - ai-safety
 ---
 
 # 🛡️ HallucinationGuard-Env v4.2
@@ -482,52 +482,126 @@ HEALTHCHECK --interval=30s --timeout=15s --start-period=300s --retries=10 \
 
 ### Heuristic Baseline (no LLM required)
 
-The heuristic baseline extracts the first sentence of the context as the answer. This establishes a floor that real LLMs should beat.
+The heuristic baseline is a deterministic agent that establishes a performance floor. It demonstrates what happens when an agent **completely ignores the question** and simply returns the first sentence of the context.
 
-```bash
-python inference.py --heuristic --episodes 3 --steps 5 --seed 42 --env-url http://localhost:7860
+#### How It Works
+
+```python
+def heuristic_agent(question: str, context: str) -> dict:
+    # 1. Extract first sentence from context (ignoring the question entirely)
+    sentences = [s.strip() for s in context.split(".") if len(s.strip()) > 10]
+    answer = sentences[0] if sentences else context[:120]
+
+    # 2. Use fixed confidence (not calibrated)
+    confidence = 0.6
+
+    # 3. Return first 80 chars as "source quote" (often irrelevant)
+    source_quote = context[:80]
+
+    return {"answer": answer, "confidence": confidence, "source_quote": source_quote}
 ```
 
-| Task | Score | Std Dev |
-|------|-------|---------|
-| task_1_factual_grounding | ~0.16 | ±0.05 |
-| task_2_multi_hop_synthesis | ~0.05 | ±0.03 |
-| task_3_adversarial_resistance | ~0.16 | ±0.03 |
-| **Overall** | **~0.12** | - |
+**Why this baseline?** It represents the absolute minimum viable agent — one that processes context but doesn't understand questions. Any real LLM should beat this by reading the question and finding relevant context.
 
-> **Note**: Scores are reproducible with `--seed 42`. The heuristic intentionally returns the first sentence of context — it's meant to be a weak baseline, not a competitive benchmark. It ignores the question, uses a fixed confidence (0.6), and provides an irrelevant source quote (first 80 chars). Real LLMs should score 2-3x higher by actually reading questions and finding relevant context.
+#### Testing Methodology
+
+We ran the heuristic baseline **5 times** on a local server (reproducible conditions) with seeds 42-46:
+
+```bash
+# Run locally for reproducible results
+uvicorn server.app:app --port 7860
+python inference.py --heuristic --env-url http://localhost:7860 --episodes 3 --steps 5 --seed 42
+```
+
+#### Results (5 Runs, Seeds 42-46)
+
+| Seed | Task 1 | Task 2 | Task 3 | Overall | Time |
+|------|--------|--------|--------|---------|------|
+| 42 | 0.151 | 0.076 | 0.037 | **0.088** | 56s |
+| 43 | 0.194 | 0.105 | 0.125 | **0.141** | 52s |
+| 44 | 0.181 | 0.074 | 0.112 | **0.122** | 48s |
+| 45 | 0.221 | 0.062 | 0.142 | **0.142** | 51s |
+| 46 | 0.129 | 0.002 | 0.037 | **0.056** | 44s |
+| **Mean** | **0.175** | **0.064** | **0.090** | **0.110** | **50s** |
+| **Std Dev** | ±0.034 | ±0.038 | ±0.046 | ±0.036 | ±4s |
+
+#### Aggregated Baseline Score
+
+| Task | Mean Score | Std Dev | 95% CI |
+|------|------------|---------|--------|
+| task_1_factual_grounding | 0.175 | ±0.034 | [0.14, 0.21] |
+| task_2_multi_hop_synthesis | 0.064 | ±0.038 | [0.03, 0.10] |
+| task_3_adversarial_resistance | 0.090 | ±0.046 | [0.05, 0.13] |
+| **Overall** | **0.110** | ±0.036 | [0.07, 0.15] |
+
+> **Note on Variance**: The high variance (±33% relative std dev) is expected because:
+> 1. The heuristic ignores questions — it lucks into correct answers when the first sentence happens to be relevant
+> 2. Different seeds sample different question/context pairs from 38 datasets
+> 3. Task 2 has the lowest scores because multi-hop reasoning requires understanding questions
 
 ### LLM Baseline (requires API key)
 
+Real LLMs understand questions and find relevant context. Here's how to run them:
+
 ```bash
 # Set required environment variables
-export API_BASE_URL=https://router.huggingface.co/v1
-export MODEL_NAME=Qwen/Qwen2.5-72B-Instruct
-export HF_TOKEN=hf_...
+export API_BASE_URL=https://api.groq.com/openai/v1
+export MODEL_NAME=qwen/qwen3-32b
+export HF_TOKEN=gsk_your_key_here
 
 # Run inference
-python inference.py --episodes 3 --steps 5 --seed 42
+python inference.py --env-url http://localhost:7860 --episodes 3 --steps 5 --seed 42
 ```
 
 ### Tested LLM Results
 
-We tested multiple LLMs on this benchmark (3 episodes × 5 steps, seed=42):
+We tested multiple LLMs on this benchmark. All tests used: **3 episodes × 5 steps, seed=42, local server**.
 
-| Rank | Model | Provider | Overall Score | Task 1 | Task 2 | Task 3 | Time |
-|------|-------|----------|---------------|--------|--------|--------|------|
-| 🥇 | qwen/qwen3-32b | Groq (cloud) | **0.51** | 0.56 | 0.48 | 0.47 | 277s |
-| 🥈 | Llama 3.3 70B | Groq (cloud) | **0.45** | 0.52 | 0.43 | 0.41 | 45s |
-| 🥉 | Llama 3.1 8B | Groq (cloud) | **0.42** | 0.48 | 0.40 | 0.38 | 40s |
+#### Leaderboard
+
+| Rank | Model | Provider | Overall | Task 1 | Task 2 | Task 3 | Time |
+|------|-------|----------|---------|--------|--------|--------|------|
+| 🥇 | **qwen/qwen3-32b** | Groq (cloud) | **0.51** | 0.56 | 0.48 | 0.47 | 277s |
+| 🥈 | **Llama 3.3 70B** | Groq (cloud) | **0.45** | 0.52 | 0.43 | 0.41 | 45s |
+| 🥉 | **Llama 3.1 8B** | Groq (cloud) | **0.42** | 0.48 | 0.40 | 0.38 | 40s |
 | 4 | GLM-4.5-Air | OpenRouter (cloud) | **0.26** | 0.22 | 0.34 | 0.23 | 960s |
 | 5 | Qwen2.5-72B-Instruct | HF Router (cloud) | **0.24** | 0.28 | 0.13 | 0.31 | 161s |
-| - | Heuristic baseline (avg) | — | **~0.12** | ~0.16 | ~0.05 | ~0.16 | ~30s |
+| - | Heuristic (5-run avg) | — | 0.11 | 0.18 | 0.06 | 0.09 | 50s |
 
-**Key Findings:**
-- **Groq qwen/qwen3-32b** achieves the highest score (0.51), exceeding the 0.20 hackathon requirement by 2.5x
-- **Groq Llama 3.3 70B** offers excellent speed/quality tradeoff — 0.45 score in just 45s
-- **Groq Llama 3.1 8B** punches above its weight — 0.42 score despite being an 8B model
-- All tested LLMs beat the heuristic baseline by 3-6x
-- Scores above 0.40 indicate strong hallucination avoidance capabilities
+#### Performance Analysis
+
+| Model | vs Baseline | Hackathon Req (≥0.20) | Speed |
+|-------|-------------|------------------------|-------|
+| qwen/qwen3-32b | **4.6× baseline** | ✅ 2.5× above | Medium (277s) |
+| Llama 3.3 70B | **4.1× baseline** | ✅ 2.3× above | Fast (45s) |
+| Llama 3.1 8B | **3.8× baseline** | ✅ 2.1× above | Fastest (40s) |
+| GLM-4.5-Air | **2.4× baseline** | ✅ 1.3× above | Slow (960s) |
+| Qwen2.5-72B | **2.2× baseline** | ✅ 1.2× above | Medium (161s) |
+| Heuristic | 1.0× (baseline) | ❌ Below | N/A |
+
+#### Key Findings
+
+1. **All LLMs beat the heuristic by 2-4.6×** — confirming the environment measures hallucination resistance
+2. **Groq qwen/qwen3-32b achieves the highest score (0.51)** — best overall performance
+3. **Groq Llama 3.3 70B** — best speed/quality tradeoff (0.45 in 45s)
+4. **Groq Llama 3.1 8B** — impressive for an 8B model (0.42)
+5. **All LLMs exceed hackathon requirement (≥0.20)** — by 1.2-2.5×
+
+#### Reproducibility Notes
+
+| Server | Reproducible? | Notes |
+|--------|---------------|-------|
+| Local (localhost:7860) | ✅ Yes | No other clients, same seed = same scores |
+| HuggingFace Spaces | ❌ Varies | Shared server, other requests affect random state |
+
+For **strictly reproducible** benchmark scores:
+```bash
+# 1. Start fresh local server
+uvicorn server.app:app --port 7860
+
+# 2. Run with same seed
+python inference.py --heuristic --env-url http://localhost:7860 --seed 42
+```
 
 #### Running with HuggingFace Router (Recommended)
 
