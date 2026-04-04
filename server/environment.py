@@ -401,8 +401,8 @@ class HallucinationEnvironment(Environment[HallucinationAction, HallucinationObs
             skill_rating=self.skill_rating,
             current_streak=self.current_streak,
             best_streak=self.best_streak,
-            episode_stats=episode_stats,
-            agent_profile=self.agent_profile,
+            episode_stats=episode_stats.model_dump() if episode_stats else None,
+            agent_profile=self.agent_profile.model_dump() if self.agent_profile else None,
             config={
                 "multi_turn_enabled": self.dialogue is not None,
                 "context_retrieval_enabled": self.config.enable_multi_turn,
