@@ -1,8 +1,8 @@
 ---
 title: HallucinationGuard-Env
 emoji: 🛡️
-colorFrom: gray
-colorTo: blue
+colorFrom: blue
+colorTo: green
 sdk: docker
 app_port: 7860
 pinned: true
@@ -19,12 +19,15 @@ tags:
   - ai-safety
 ---
 
-# 🛡️ HallucinationGuard-Env v4.2
+# 🛡️ HallucinationGuard-Env
 
 > **The production-grade OpenEnv RL environment for training and evaluating LLMs on hallucination avoidance.**
 
+**Server Version:** v4.2.0 | **PyPI Package:** v2.1.2
+
 [![OpenEnv](https://img.shields.io/badge/OpenEnv-Compatible-blue)](https://github.com/meta-pytorch/OpenEnv)
-[![PyPI](https://img.shields.io/badge/PyPI-openenv--halluguard-orange)](https://pypi.org/project/openenv-halluguard/)
+[![PyPI](https://img.shields.io/pypi/v/openenv-halluguard?color=orange&label=PyPI)](https://pypi.org/project/openenv-halluguard/)
+[![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue)](#-pypi-package)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 [![Dataset](https://img.shields.io/badge/Dataset-1M%2B_examples-orange)](#datasets)
 [![Grader](https://img.shields.io/badge/Grader-research--grade-purple)](#-hallucination-detection)
@@ -881,7 +884,117 @@ spec:
 
 ---
 
+## 📦 PyPI Package
+
+### Installation
+
+```bash
+pip install openenv-halluguard
+```
+
+### Python Compatibility
+
+| Python Version | Status | Notes |
+|----------------|--------|-------|
+| 3.10 | ✅ Fully Supported | Recommended |
+| 3.11 | ✅ Fully Supported | Recommended |
+| 3.12 | ✅ Fully Supported | Recommended |
+| 3.13 | ✅ Supported | Works with numpy>=1.24 |
+| 3.14 | ✅ Supported | Requires numpy>=1.24 (not numpy<2.0) |
+
+### Quick Start
+
+```python
+from hallucination_guard_env import HallucinationEnv
+
+# Initialize environment
+env = HallucinationEnv()
+
+# Start new episode
+obs = env.reset()
+print(f"Question: {obs.question}")
+print(f"Context: {obs.context[:200]}...")
+
+# Submit answer
+result = env.step(
+    answer="Your answer based on context",
+    confidence=0.85,
+    source_quote="verbatim quote from context"
+)
+
+print(f"Reward: {result.reward}")
+print(f"Hallucination: {result.is_hallucination}")
+print(f"Feedback: {result.feedback}")
+
+# Check state
+state = env.state()
+print(f"Accuracy: {state.accuracy_so_far}")
+print(f"Skill Rating: {state.skill_rating}")
+```
+
+### Package Structure
+
+```
+hallucination_guard_env/
+├── __init__.py           # Package exports
+├── environment.py        # HallucinationEnvironment class
+└── models.py             # Pydantic models (via openenv-core)
+```
+
+---
+
 ## Changelog
+
+### v2.1.2 (2026-04-03) — PyPI Package Release
+
+**Package Fixes:**
+- **Fixed** Python 3.14 compatibility — relaxed numpy constraint from `<2.0` to `>=1.24.0`
+- **Fixed** Pydantic validation errors — `HallucinationObservation` now uses Pydantic BaseModel instead of dataclass
+- **Fixed** `state()` method TypeError — `episode_stats` now properly serialized with `model_dump()`
+- **Fixed** Package structure — proper `hallucination_guard_env/` module layout with `__init__.py`
+- **Fixed** Inference JSON validation — Groq models now work with fallback for unsupported `response_format`
+  - Added `max_tokens=512` to prevent truncated responses
+  - Automatic fallback when `response_format={"type": "json_object"}` is not supported
+  - Improved prompt engineering for JSON extraction
+
+**Dependencies:**
+- NumPy >=1.24.0 (works with NumPy 1.x and 2.x)
+- Pydantic >=2.0.0
+- openenv-core >=0.2.0
+- fastapi >=0.100.0
+- uvicorn >=0.23.0
+- huggingface_hub >=0.20.0
+- datasets >=2.14.0
+- sentence-transformers >=2.7.0,<3.0.0
+- transformers >=4.35.0,<5.0.0
+- rouge-score >=0.1.2
+- bert-score >=0.3.13
+
+**Verified Working:**
+```python
+# All tests pass on Python 3.10-3.14
+from hallucination_guard_env import HallucinationEnv
+env = HallucinationEnv()
+obs = env.reset()
+result = env.step(answer="test", confidence=0.8)
+state = env.state()
+```
+
+### v2.1.1 (2026-04-03)
+
+- **Fixed** `state()` method returning Pydantic object instead of dict
+- Added proper `model_dump()` for episode_stats serialization
+
+### v2.1.0 (2026-04-03)
+
+- **Fixed** Package structure — added `hallucination_guard_env/` module directory
+- **Fixed** Import errors — proper `__init__.py` with correct exports
+- Updated pyproject.toml build targets from `["server", "models.py", "client.py"]` to `["hallucination_guard_env"]`
+
+### v2.0.1 (2026-04-03)
+
+- Initial PyPI release
+- **Issue:** Incorrect package structure (missing module directory)
 
 ### v4.2.0 (2026-03)
 
