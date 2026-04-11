@@ -1113,6 +1113,8 @@ async def lifespan(app: FastAPI):
     def preload_models():
         try:
             logger.info("Preloading ML models...")
+            import transformers
+            transformers.logging.set_verbosity_error()
             from sentence_transformers import SentenceTransformer, CrossEncoder
             SentenceTransformer('all-MiniLM-L6-v2')
             CrossEncoder('cross-encoder/nli-deberta-v3-small')
