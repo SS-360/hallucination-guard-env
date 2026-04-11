@@ -180,6 +180,8 @@ def _get_bert_scorer():
     if _bert_scorer is not None:
         return _bert_scorer
     try:
+        import transformers
+        transformers.logging.set_verbosity_error()
         from bert_score import BERTScorer
         _bert_scorer = BERTScorer(
             model_type="roberta-base",
