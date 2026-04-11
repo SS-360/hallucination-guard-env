@@ -159,6 +159,7 @@ def compute_rouge(hypothesis: str, reference: str) -> Dict[str, float]:
 
 # ── BERTScore ─────────────────────────────────────────────────────────────────
 _bertscore_available = None
+_bert_scorer = None
 
 def _check_bertscore():
     global _bertscore_available
@@ -173,8 +174,27 @@ def _check_bertscore():
     return _bertscore_available
 
 
+def _get_bert_scorer():
+    """Lazy singleton BERTScorer — loads roberta-base once and reuses it."""
+    global _bert_scorer
+    if _bert_scorer is not None:
+        return _bert_scorer
+    try:
+        from bert_score import BERTScorer
+        _bert_scorer = BERTScorer(
+            model_type="roberta-base",
+            lang="en",
+            device="cpu",
+        )
+        logger.info("BERTScorer (roberta-base) cached as singleton")
+    except Exception as e:
+        logger.warning(f"BERTScorer init failed: {e}")
+        _bert_scorer = None
+    return _bert_scorer
+
+
 def compute_bertscore(hypothesis: str, reference: str) -> Dict[str, float]:
-    """Compute BERTScore P/R/F1 using DeBERTa-v3-base.
+    """Compute BERTScore P/R/F1 using roberta-base.
 
     Gracefully returns zeros if bert-score is unavailable or crashes
     (e.g. due to incompatibilities with newer transformers versions).
@@ -187,15 +207,12 @@ def compute_bertscore(hypothesis: str, reference: str) -> Dict[str, float]:
     if not isinstance(hypothesis, str) or not isinstance(reference, str):
         return {"precision": 0.0, "recall": 0.0, "f1": 0.0}
     try:
-        from bert_score import score as bscore
-        # Use roberta-base instead of deberta-v3-base — deberta's fast tokenizer
-        # crashes with transformers>=4.57 due to vocab_file being None in the
-        # convert_slow_tokenizer path. roberta-base is widely supported and
-        # produces reliable BERTScore metrics.
-        P, R, F = bscore(
+        scorer = _get_bert_scorer()
+        if scorer is None:
+            return {"precision": 0.0, "recall": 0.0, "f1": 0.0}
+        P, R, F = scorer.score(
             [str(hypothesis)], [str(reference)],
-            model_type="roberta-base",
-            lang="en", verbose=False, device="cpu",
+            verbose=False,
         )
         return {
             "precision": round(float(P[0]), 4),
