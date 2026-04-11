@@ -12,7 +12,7 @@ import sys, os, uuid, logging, dataclasses, enum, time, threading
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi import FastAPI, HTTPException, Header, Request
-from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse
+from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from typing import Dict, Any, Optional, List
@@ -39,6 +39,7 @@ STUNNING_DOCS_HTML = """<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>HallucinationGuard-Env · OpenEnv</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23080c14'/><text x='50' y='68' font-size='55' text-anchor='middle' fill='%23f59e0b' font-family='sans-serif' font-weight='bold'>H</text></svg>">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root {
@@ -1191,6 +1192,11 @@ def _safe_dict(obj):
 
 @app.get("/", include_in_schema=False, response_class=HTMLResponse)
 async def root(): return STUNNING_DOCS_HTML
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    # SVG favicon served as data-uri in the HTML; return 204 so browsers stop logging 404s
+    return Response(status_code=204)
 
 @app.get("/docs", include_in_schema=False, response_class=HTMLResponse)
 async def docs(): return STUNNING_DOCS_HTML
