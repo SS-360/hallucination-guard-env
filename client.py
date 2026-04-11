@@ -9,7 +9,7 @@ from models import HallucinationAction, HallucinationObservation, HallucinationS
 class HallucinationClient:
     """Client for interacting with the HallucinationGuard environment."""
 
-    def __init__(self, base_url: str = "http://localhost:8000"):
+    def __init__(self, base_url: str = "http://localhost:7860"):
         self.base_url = base_url.rstrip("/")
         self.session = requests.Session()
 
@@ -24,6 +24,7 @@ class HallucinationClient:
         response = self.session.post(f"{self.base_url}/reset")
         response.raise_for_status()
         data = response.json()
+        self._session_id = data.get("session_id")
         return HallucinationObservation(**data)
 
     def step(self, action: HallucinationAction) -> HallucinationObservation:
@@ -34,6 +35,8 @@ class HallucinationClient:
             "source_quote": action.source_quote,
             "metadata": action.metadata
         }
+        if getattr(self, '_session_id', None):
+            action_dict["session_id"] = self._session_id
         response = self.session.post(
             f"{self.base_url}/step",
             json=action_dict
