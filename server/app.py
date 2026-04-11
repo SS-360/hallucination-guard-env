@@ -819,14 +819,36 @@ result = requests.<span class="fn">post</span>(<span class="st">f"{BASE}/step"</
 
 </main>
 
+<!-- ══ FOOTER ══ -->
+<footer style="text-align:center;padding:32px 40px 24px;border-top:1px solid var(--border);color:var(--muted);font-size:12px;">
+  HallucinationGuard-Env v4.2.0 &middot; OpenEnv &middot; <a href="/swagger" style="color:var(--amber);text-decoration:none">Swagger Docs</a> &middot; <a href="/redoc" style="color:var(--amber);text-decoration:none">ReDoc</a>
+</footer>
+
 <script>
 let sessionId = null;
 let stepCount = 0;
 const MAX_STEPS = 10;
 
-const REWARD_LABELS = [
-  'correctness','grounding','citation','calibration',
-  'consistency','halluc_detect','rouge_l','bert_score','align_score'
+const REWARD_KEYS = [
+  {key:'correctness',           label:'Factual Correctness',  css:'rc-0'},
+  {key:'grounding',             label:'Source Grounding',     css:'rc-1'},
+  {key:'citation',              label:'Citation Accuracy',    css:'rc-2'},
+  {key:'calibration',          label:'Confidence Calibr.',   css:'rc-3'},
+  {key:'consistency',           label:'Semantic Consistency', css:'rc-4'},
+  {key:'halluc_detect',        label:'Hallucination Detect.', css:'rc-5'},
+  {key:'rouge_l',               label:'ROUGE-L',             css:'rc-6'},
+  {key:'bert_score',            label:'BERTScore',            css:'rc-7'},
+  {key:'align_score',           label:'AlignScore',           css:'rc-8'},
+  // Also accept alternate key names from the grader
+  {key:'factual_correctness',   label:'Factual Correctness',  css:'rc-0'},
+  {key:'source_grounding',      label:'Source Grounding',     css:'rc-1'},
+  {key:'citation_accuracy',     label:'Citation Accuracy',    css:'rc-2'},
+  {key:'confidence_calibration', label:'Confidence Calibr.',   css:'rc-3'},
+  {key:'semantic_consistency',  label:'Semantic Consistency', css:'rc-4'},
+  {key:'hallucination_penalty', label:'Hallucination Detect.', css:'rc-5'},
+  {key:'rouge_score',           label:'ROUGE-L',              css:'rc-6'},
+  {key:'bertscore',             label:'BERTScore',            css:'rc-7'},
+  {key:'alignscore',            label:'AlignScore',           css:'rc-8'},
 ];
 
 function showTab(id, el) {
@@ -834,6 +856,9 @@ function showTab(id, el) {
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   el.classList.add('active');
   document.getElementById(id).classList.add('active');
+  if (id === 'playground') {
+    document.getElementById('playground').scrollIntoView({behavior:'smooth', block:'start'});
+  }
 }
 
 function setStatus(state) {
@@ -870,18 +895,21 @@ function renderRewards(data) {
     totalEl.style.color = r >= 0 ? 'var(--teal)' : 'var(--red)';
   }
 
-  const info = data.info || data.reward_breakdown || data.breakdown || {};
+  const info = data.info || data.reward_breakdown || data.breakdown || data.metadata || {};
   let html = '';
   let foundAny = false;
-  REWARD_LABELS.forEach((k, i) => {
-    let v = info[k] != null ? info[k] : (data[k] != null ? data[k] : null);
+  const seen = new Set();
+  REWARD_KEYS.forEach(({key, label, css}) => {
+    if (seen.has(label)) return;
+    let v = info[key] != null ? info[key] : (data[key] != null ? data[key] : null);
     if (v == null) return;
+    seen.add(label);
     foundAny = true;
     const pct = Math.min(100, Math.max(0, Math.round(Math.abs(parseFloat(v)) * 100)));
     const display = parseFloat(v).toFixed(3);
     html += `<div class="reward-bar-row">
-      <span class="rb-label">${k}</span>
-      <div class="rb-track"><div class="rb-fill rc-${i}" style="width:${pct}%"></div></div>
+      <span class="rb-label">${label}</span>
+      <div class="rb-track"><div class="rb-fill ${css}" style="width:${pct}%"></div></div>
       <span class="rb-val">${display}</span>
     </div>`;
   });
@@ -907,6 +935,8 @@ function renderRewards(data) {
 
 async function doReset() {
   const diff = document.getElementById('difficulty').value;
+  const resetBtn = document.querySelector('.btn-primary');
+  resetBtn.disabled = true; resetBtn.textContent = 'Loading...';
   document.getElementById('ctx-box').innerHTML = '<span class="empty-hint">Loading...</span>';
   document.getElementById('obs-box').textContent = 'Loading...';
   document.getElementById('step-btn').disabled = true;
@@ -932,18 +962,21 @@ async function doReset() {
   } catch(e) {
     document.getElementById('ctx-box').innerHTML = '<span style="color:var(--red)">Error: ' + escHtml(e.message) + '</span>';
     setStatus('');
+  } finally {
+    resetBtn.disabled = false; resetBtn.textContent = '⟳ Reset';
   }
 }
 
 async function doStep() {
   if (!sessionId) { alert('Reset first!'); return; }
+  const stepBtn = document.getElementById('step-btn');
   const body = {
     answer: document.getElementById('answer').value,
     confidence: parseFloat(document.getElementById('confidence').value) || 0.5,
     source_quote: document.getElementById('source_quote').value,
     session_id: sessionId,
   };
-  document.getElementById('step-btn').disabled = true;
+  stepBtn.disabled = true; stepBtn.textContent = 'Submitting...';
   try {
     const r = await fetch('/step', {
       method: 'POST',
@@ -957,16 +990,17 @@ async function doStep() {
     document.getElementById('raw-box').textContent = JSON.stringify(data, null, 2);
     if (data.done) {
       sessionId = null;
+      stepBtn.textContent = '→ Step';
       document.getElementById('ctx-box').innerHTML = '<span class="empty-hint">Episode complete. Click Reset for a new episode.</span>';
       setStatus('done');
     } else {
-      document.getElementById('step-btn').disabled = false;
+      stepBtn.disabled = false; stepBtn.textContent = '→ Step';
       setStatus('ready');
       if (data.question) renderContext(data.question, data.context || '');
     }
   } catch(e) {
     document.getElementById('raw-box').textContent = 'Error: ' + e.message;
-    document.getElementById('step-btn').disabled = false;
+    stepBtn.disabled = false; stepBtn.textContent = '→ Step';
     setStatus('');
   }
 }
@@ -980,9 +1014,21 @@ function toggleRaw() {
 
 function copyCode(btn, id) {
   const text = document.getElementById(id).textContent;
-  navigator.clipboard.writeText(text).then(() => {
+  const doCopy = (txt) => {
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(txt);
+    }
+    const ta = document.createElement('textarea');
+    ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
+    return Promise.resolve();
+  };
+  doCopy(text).then(() => {
     btn.textContent = 'Copied!';
     setTimeout(() => btn.textContent = 'Copy', 1800);
+  }).catch(() => {
+    btn.textContent = 'Failed'; setTimeout(() => btn.textContent = 'Copy', 1800);
   });
 }
 </script>
