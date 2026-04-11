@@ -206,6 +206,7 @@ class HallucinationEnvironment(Environment[HallucinationAction, HallucinationObs
         # ── Model adapter setup ───────────────────────────────────────────────
         # When model= is supplied, the environment auto-generates answers by
         # calling the adapter inside step(), so callers just loop reset/step.
+        self.active_adapter = None
         if model is not None:
             try:
                 import sys, os
@@ -214,11 +215,10 @@ class HallucinationEnvironment(Environment[HallucinationAction, HallucinationObs
                 cfg = model_config or {}
                 self.active_adapter = create_adapter(model, **cfg)
                 logger.info(f"Active adapter: {model} ({self.active_adapter.__class__.__name__})")
+            except ImportError:
+                logger.info(f"model_adapters not installed — manual action mode (model={model} ignored)")
             except Exception as e:
                 logger.warning(f"Could not create adapter for '{model}': {e}. Manual action mode.")
-                self.active_adapter = None
-        else:
-            self.active_adapter = None
 
         # Generate episode ID
         self.episode_id = episode_id or f"ep_{uuid.uuid4().hex[:8]}"
