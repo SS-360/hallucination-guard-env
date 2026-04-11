@@ -13,7 +13,7 @@ description: |
 
   Three tasks (easy → medium → hard) with deterministic per-episode graders.
 
-version: 4.1.0
+version: 4.2.0
 author: community
 license: MIT
 
