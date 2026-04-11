@@ -335,12 +335,18 @@ def run_episode(
             obs_correctness = 0.0
             obs_calibration = 0.0
             obs_hall_score = 0.0
+        # Extract ML component scores from reward_breakdown if available
+        rb = obs_metadata.get("reward_breakdown", {}) if isinstance(obs_metadata, dict) else {}
         step_infos.append({
             "correctness":         obs_correctness,
             "grounding":           obs.get("grounding_score", 0.0),
             "calibration":         obs_calibration if obs_calibration else action["confidence"],
             "hallucination_score": obs_hall_score if obs_hall_score else (1.0 if obs.get("is_hallucination") else 0.0),
             "is_hallucination":    bool(obs.get("is_hallucination", False)),
+            "semantic_consistency": rb.get("semantic_consistency", 0.0),
+            "rouge_l":             rb.get("rouge_l", 0.0),
+            "bert_score":          rb.get("bert_score", 0.0),
+            "align_score":         rb.get("align_score", 0.0),
         })
 
         # Format action for logging (truncated answer)
