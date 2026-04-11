@@ -51,6 +51,13 @@ class RewardBreakdown(BaseModel):
     confidence_calibration: float = 0.0
     semantic_consistency: float = 0.0
     hallucination_penalty: float = 0.0
+    rouge_l: float = 0.0
+    bert_score: float = 0.0
+    align_score: float = 0.0
+    rouge_contrib: float = 0.0
+    bertscore_contrib: float = 0.0
+    alignscore_contrib: float = 0.0
+    difficulty_adjustment: float = 1.0
     difficulty_bonus: float = 0.0
     consistency_bonus: float = 0.0
     total: float = 0.0
@@ -58,21 +65,23 @@ class RewardBreakdown(BaseModel):
 
 class SemanticAnalysis(BaseModel):
     """Results of semantic analysis on the answer."""
-    embedding_similarity: float = 0.0
+    context_answer_similarity: float = 0.0
+    truth_answer_similarity: float = 0.0
+    key_claim_overlap: float = 0.0
+    contradiction_detected: bool = False
     entailment_score: float = 0.0
-    contradiction_score: float = 0.0
-    neutral_score: float = 0.0
-    key_entity_overlap: float = 0.0
-    semantic_density: float = 0.0
+    nli_used: bool = False
 
 
 class CitationAnalysis(BaseModel):
     """Results of citation verification."""
     exact_match: bool = False
     partial_matches: List[Dict[str, Any]] = Field(default_factory=list)
-    citation_location: Optional[str] = None
+    best_match_score: float = 0.0
+    match_location: Optional[int] = None
     surrounding_context: str = ""
-    citation_confidence: float = 0.0
+    quote_length: int = 0
+    context_length: int = 0
 
 
 class HallucinationAction(Action):

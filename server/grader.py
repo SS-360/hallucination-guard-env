@@ -4,7 +4,7 @@ Upgrades in v4.0:
 - NLI model: nli-deberta-v3-small (memory-efficient for HF Spaces)
 - ROUGE-1/2/L added (Lin 2004)
 - BERTScore added via DeBERTa-v3-base (Zhang et al. 2020)
-- AlignScore faithfulness added via RoBERTa (Zha et al. ACL 2023)
+- Alignment score via NLI CrossEncoder (replaces AlignScore — no separate model needed)
 - Reward expanded from 6 to 9 components
 """
 
@@ -159,6 +159,7 @@ def compute_rouge(hypothesis: str, reference: str) -> Dict[str, float]:
 
 # ── BERTScore ─────────────────────────────────────────────────────────────────
 _bertscore_available = None
+_bert_scorer = None
 
 def _check_bertscore():
     global _bertscore_available
@@ -173,18 +174,47 @@ def _check_bertscore():
     return _bertscore_available
 
 
+def _get_bert_scorer():
+    """Lazy singleton BERTScorer — loads roberta-base once and reuses it."""
+    global _bert_scorer
+    if _bert_scorer is not None:
+        return _bert_scorer
+    try:
+        import transformers
+        transformers.logging.set_verbosity_error()
+        from bert_score import BERTScorer
+        _bert_scorer = BERTScorer(
+            model_type="roberta-base",
+            lang="en",
+            device="cpu",
+        )
+        logger.info("BERTScorer (roberta-base) cached as singleton")
+    except Exception as e:
+        logger.warning(f"BERTScorer init failed: {e}")
+        _bert_scorer = None
+    return _bert_scorer
+
+
 def compute_bertscore(hypothesis: str, reference: str) -> Dict[str, float]:
-    """Compute BERTScore P/R/F1 using DeBERTa-v3-base."""
+    """Compute BERTScore P/R/F1 using roberta-base.
+
+    Gracefully returns zeros if bert-score is unavailable or crashes
+    (e.g. due to incompatibilities with newer transformers versions).
+    """
     if not _check_bertscore():
         return {"precision": 0.0, "recall": 0.0, "f1": 0.0}
+    # Guard against None / non-string inputs that cause internal crashes
     if not hypothesis or not reference:
         return {"precision": 0.0, "recall": 0.0, "f1": 0.0}
+    if not isinstance(hypothesis, str) or not isinstance(reference, str):
+        return {"precision": 0.0, "recall": 0.0, "f1": 0.0}
     try:
-        from bert_score import score as bscore
-        P, R, F = bscore(
-            [hypothesis], [reference],
-            model_type="microsoft/deberta-v3-base",
-            lang="en", verbose=False, device="cpu"
+        scorer = _get_bert_scorer()
+        if scorer is None:
+            return {"precision": 0.0, "recall": 0.0, "f1": 0.0}
+        P, R, F = scorer.score(
+            [str(hypothesis)], [str(reference)],
+            verbose=False,
         )
         return {
             "precision": round(float(P[0]), 4),
@@ -192,58 +222,56 @@ def compute_bertscore(hypothesis: str, reference: str) -> Dict[str, float]:
             "f1":        round(float(F[0]), 4),
         }
     except Exception as e:
-        logger.warning(f"BERTScore failed: {e}")
+        logger.debug(f"BERTScore failed: {e}")
+        # Mark as unavailable so future calls skip the import entirely
+        global _bertscore_available
+        _bertscore_available = False
         return {"precision": 0.0, "recall": 0.0, "f1": 0.0}
 
 
-# ── AlignScore ────────────────────────────────────────────────────────────────
-_alignscore_model = None
-_alignscore_checked = False
-
-def _torch_available() -> bool:
-    """Check if PyTorch is available with CUDA support."""
-    try:
-        import torch
-        return torch.cuda.is_available()
-    except Exception:
-        return False
-
-def _get_alignscore():
-    """AlignScore is optional — gracefully disabled if not installed."""
-    global _alignscore_model, _alignscore_checked
-    if _alignscore_checked:
-        return _alignscore_model
-    _alignscore_checked = True
-    try:
-        from alignscore import AlignScore
-        _alignscore_model = AlignScore(
-            model="roberta-base", batch_size=8,
-            device="cuda" if _torch_available() else "cpu",
-            alignment_type="bin",
-        )
-        logger.info("AlignScore loaded ✅")
-    except ImportError:
-        logger.info("AlignScore not installed — using fallback (neutral score 0.5). "
-                    "To enable, install: pip install alignscore")
-        _alignscore_model = None
-    except Exception as e:
-        logger.warning(f"AlignScore initialization failed: {e} — using fallback")
-        _alignscore_model = None
-    return _alignscore_model
+# ── Alignment Score (NLI-based, replaces AlignScore) ──────────────────────────
+# AlignScore requires a separate 1.3GB model + manual checkpoint download from GitHub.
+# Instead, we compute alignment using the already-loaded NLI CrossEncoder,
+# which provides an equivalent faithfulness signal at zero extra memory cost.
+# The NLI model scores (entailment, contradiction, neutral) between context→answer
+# are transformed into an alignment score: entailment → high, contradiction → low.
 
 def compute_alignscore(context: str, answer: str) -> float:
     """
-    AlignScore faithfulness score (Zha et al. ACL 2023).
-    Returns 0.5 (neutral) if AlignScore is not installed — does not crash.
+    Compute alignment/faithfulness score using the NLI CrossEncoder.
+
+    Uses the already-loaded nli-deberta-v3-small model to measure how well
+    the answer is entailed by the context. This provides an equivalent signal
+    to AlignScore (Zha et al. ACL 2023) without requiring a separate model.
+
+    Returns a score in [0, 1]:
+      - 1.0: answer is fully entailed by context (faithful)
+      - 0.5: neutral / no clear entailment
+      - 0.0: answer contradicts context
+
+    Falls back to 0.5 (neutral) if NLI model is unavailable.
     """
-    model = _get_alignscore()
-    if model is None:
-        return 0.5  # neutral fallback — no penalty for missing AlignScore
+    if not context or not answer:
+        return 0.5
+    nli = _get_nli()
+    if nli is None:
+        return 0.5
     try:
-        scores = model.score(contexts=[context], claims=[answer])
-        return float(scores[0]) if scores else 0.5
+        # NLI labels: [contradiction, entailment, neutral]
+        scores = nli.predict([(context, answer)])
+        if hasattr(scores, 'tolist'):
+            scores = scores.tolist()
+        if isinstance(scores, list) and len(scores) > 0:
+            if isinstance(scores[0], list) and len(scores[0]) == 3:
+                # scores[0] = [contradiction_prob, entailment_prob, neutral_prob]
+                contradiction, entailment, neutral = scores[0]
+                # Convert to alignment: entailment → 1.0, neutral → 0.5, contradiction → 0.0
+                return float(max(0.0, min(1.0, entailment - contradiction + 0.5)))
+            else:
+                return 0.5
+        return 0.5
     except Exception as e:
-        logger.debug(f"AlignScore failed: {e}")
+        logger.debug(f"NLI alignment score failed: {e}")
         return 0.5
 
 def normalize_text(text: str, preserve_numbers: bool = False) -> str:
@@ -787,9 +815,10 @@ def detect_hallucination_advanced(
     else:
         analysis["entity_hallucination"] = 0.0
 
-    # Numerical fabrication check
-    answer_numbers = set(re.findall(r'\d+(?:\.\d+)?', normalized_answer))
-    context_numbers = set(re.findall(r'\d+(?:\.\d+)?', normalized_context))
+    # Numerical fabrication check — extract numbers from ORIGINAL text
+    # (normalize_text replaces numbers with NUM, so we must check before normalization)
+    answer_numbers = set(re.findall(r'\d+(?:\.\d+)?', answer))
+    context_numbers = set(re.findall(r'\d+(?:\.\d+)?', context))
     novel_numbers = answer_numbers - context_numbers
 
     if answer_numbers:
@@ -1298,13 +1327,13 @@ def calculate_reward(
         "difficulty_multiplier": difficulty_multiplier,
         "consistency_bonus": consistency_bonus,
 
-        # Component contributions
+        # Component contributions (matching actual reward calculation)
         "components": {
             "correctness_contrib": reward_weights["factual_correctness"] * correctness,
-            "grounding_contrib": reward_weights["source_grounding"] * grounding_score,
-            "citation_contrib": reward_weights["citation_accuracy"] * citation_analysis.get("best_match_score", 0.0),
+            "grounding_contrib": reward_weights["source_grounding"] * effective_grounding,
+            "citation_contrib": reward_weights["citation_accuracy"] * min(citation_analysis.get("best_match_score", 0.0), factual_cap),
             "calibration_contrib": reward_weights["confidence_calibration"] * calibration_score,
-            "semantic_contrib": reward_weights["semantic_consistency"] * semantic_score,
+            "semantic_contrib": reward_weights["semantic_consistency"] * min(semantic_score, factual_cap),
             "hallucination_contrib": reward_weights["hallucination_penalty"] * hallucination_penalty_score,
         },
 
@@ -1314,10 +1343,10 @@ def calculate_reward(
         "bertscore": bs_scores,
         "alignscore": align_score,
 
-        # Component contributions
-        "rouge_contrib":      reward_weights.get("rouge_score", 0.05) * rouge_combined,
-        "bertscore_contrib":  reward_weights.get("bertscore",   0.05) * bertscore_f1,
-        "alignscore_contrib": reward_weights.get("alignscore",  0.05) * align_score,
+        # Component contributions (matching actual reward calculation with factual_cap)
+        "rouge_contrib":      reward_weights.get("rouge_score", 0.02) * min(rouge_combined, factual_cap),
+        "bertscore_contrib":  reward_weights.get("bertscore",   0.02) * min(bertscore_f1, factual_cap),
+        "alignscore_contrib": reward_weights.get("alignscore",  0.01) * min(align_score, factual_cap),
 
         # Detailed analyses
         "correctness_analysis": correctness_analysis,

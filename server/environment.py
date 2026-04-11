@@ -93,7 +93,8 @@ class HallucinationEnvironment(Environment[HallucinationAction, HallucinationObs
         self,
         transform=None,
         config: Optional[EnvironmentConfig] = None,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
+        dataset_loader: Optional["DatasetLoader"] = None
     ):
         super().__init__(transform=transform)
 
@@ -101,22 +102,28 @@ class HallucinationEnvironment(Environment[HallucinationAction, HallucinationObs
         self.config = config or EnvironmentConfig()
         self.session_id = session_id or str(uuid.uuid4())[:8]
 
-        # Dataset management — load synthetic baseline, then augment with real HF data
-        self.dataset_loader = DatasetLoader()
-        self.dataset_loader.load_builtin_datasets()
-        logger.info(f"Synthetic dataset: {self.dataset_loader.get_total_examples()} examples")
+        # Dataset management — accept a pre-loaded shared loader to avoid
+        # reloading 1M+ examples on every session creation.
+        if dataset_loader is not None:
+            self.dataset_loader = dataset_loader
+            logger.info(f"Reusing shared dataset loader — {dataset_loader.get_total_examples():,} examples")
+        else:
+            # First boot: load synthetic baseline, then augment with real HF data
+            self.dataset_loader = DatasetLoader()
+            self.dataset_loader.load_builtin_datasets()
+            logger.info(f"Synthetic dataset: {self.dataset_loader.get_total_examples()} examples")
 
-        # Attempt to load real HuggingFace datasets (SQuAD, TriviaQA, HaluEval, TruthfulQA).
-        # Uses disk cache after first download so restarts are instant.
-        # Gracefully skips if the `datasets` package is not installed.
-        try:
-            real_added = self.dataset_loader.load_real_datasets(max_per_dataset=500, cache=True)
-            if real_added > 0:
-                logger.info(f"Added {real_added} real examples — total: {self.dataset_loader.get_total_examples()}")
-            else:
-                logger.info("HuggingFace datasets unavailable; using synthetic data only")
-        except Exception as _ds_err:
-            logger.warning(f"Dataset loading failed ({_ds_err}); continuing with synthetic data only")
+            # Attempt to load real HuggingFace datasets (SQuAD, TriviaQA, HaluEval, TruthfulQA).
+            # Uses disk cache after first download so restarts are instant.
+            # Gracefully skips if the `datasets` package is not installed.
+            try:
+                real_added = self.dataset_loader.load_real_datasets(max_per_dataset=500, cache=True)
+                if real_added > 0:
+                    logger.info(f"Added {real_added} real examples — total: {self.dataset_loader.get_total_examples()}")
+                else:
+                    logger.info("HuggingFace datasets unavailable; using synthetic data only")
+            except Exception as _ds_err:
+                logger.warning(f"Dataset loading failed ({_ds_err}); continuing with synthetic data only")
 
         # Episode state
         self.episode_id: Optional[str] = None
@@ -206,6 +213,7 @@ class HallucinationEnvironment(Environment[HallucinationAction, HallucinationObs
         # ── Model adapter setup ───────────────────────────────────────────────
         # When model= is supplied, the environment auto-generates answers by
         # calling the adapter inside step(), so callers just loop reset/step.
+        self.active_adapter = None
         if model is not None:
             try:
                 import sys, os
@@ -214,11 +222,10 @@ class HallucinationEnvironment(Environment[HallucinationAction, HallucinationObs
                 cfg = model_config or {}
                 self.active_adapter = create_adapter(model, **cfg)
                 logger.info(f"Active adapter: {model} ({self.active_adapter.__class__.__name__})")
+            except ImportError:
+                logger.info(f"model_adapters not installed — manual action mode (model={model} ignored)")
             except Exception as e:
                 logger.warning(f"Could not create adapter for '{model}': {e}. Manual action mode.")
-                self.active_adapter = None
-        else:
-            self.active_adapter = None
 
         # Generate episode ID
         self.episode_id = episode_id or f"ep_{uuid.uuid4().hex[:8]}"
@@ -976,6 +983,12 @@ class HallucinationEnvironment(Environment[HallucinationAction, HallucinationObs
             "confidence_calibration": info.get("calibration", 0.0),
             "semantic_consistency": info.get("semantic_consistency", 0.0),
             "hallucination_penalty": info.get("hallucination_penalty", 0.0),
+            "rouge_l": info.get("rouge_combined", 0.0),
+            "bert_score": info.get("bertscore", {}).get("f1", 0.0) if isinstance(info.get("bertscore"), dict) else info.get("bertscore", 0.0),
+            "align_score": info.get("alignscore", 0.0),
+            "rouge_contrib": info.get("rouge_contrib", 0.0),
+            "bertscore_contrib": info.get("bertscore_contrib", 0.0),
+            "alignscore_contrib": info.get("alignscore_contrib", 0.0),
             "total": info.get("total_reward", 0.0),
             "difficulty_adjustment": info.get("difficulty_multiplier", 1.0),
             "consistency_bonus": info.get("consistency_bonus", 0.0),

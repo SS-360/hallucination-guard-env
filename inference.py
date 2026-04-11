@@ -136,9 +136,10 @@ class EnvClient:
     """Thin HTTP wrapper around the HallucinationGuard REST API."""
 
     def __init__(self, base_url: str, timeout: int = 300):
-        self.base    = base_url.rstrip("/")
-        self.timeout = timeout
-        self.session = requests.Session()
+        self.base       = base_url.rstrip("/")
+        self.timeout    = timeout
+        self.session    = requests.Session()
+        self._session_id: Optional[str] = None
 
     def _get(self, path: str) -> Dict[str, Any]:
         r = self.session.get(f"{self.base}{path}", timeout=self.timeout)
@@ -157,14 +158,19 @@ class EnvClient:
         return self._get("/tasks")
 
     def reset(self, difficulty: str, seed: int) -> Dict[str, Any]:
-        return self._post("/reset", {"difficulty": difficulty, "seed": seed})
+        result = self._post("/reset", {"difficulty": difficulty, "seed": seed})
+        self._session_id = result.get("session_id")
+        return result
 
     def step(self, answer: str, confidence: float, source_quote: str) -> Dict[str, Any]:
-        return self._post("/step", {
+        body: Dict[str, Any] = {
             "answer":       answer,
             "confidence":   confidence,
             "source_quote": source_quote,
-        })
+        }
+        if self._session_id:
+            body["session_id"] = self._session_id
+        return self._post("/step", body)
 
     def grade(self, task_id: str,
               step_rewards: List[float],
@@ -319,12 +325,28 @@ def run_episode(
         reward = float(obs.get("reward") or 0.0)
         done = bool(obs.get("done", False))
         step_rewards.append(reward)
+        # Extract metrics from observation metadata (returned by the environment)
+        obs_metadata = obs.get("metadata", {})
+        if isinstance(obs_metadata, dict):
+            obs_correctness = obs_metadata.get("correctness", 0.0)
+            obs_calibration = obs_metadata.get("calibration", 0.0)
+            obs_hall_score = obs_metadata.get("hallucination_score", 0.0)
+        else:
+            obs_correctness = 0.0
+            obs_calibration = 0.0
+            obs_hall_score = 0.0
+        # Extract ML component scores from reward_breakdown if available
+        rb = obs_metadata.get("reward_breakdown", {}) if isinstance(obs_metadata, dict) else {}
         step_infos.append({
-            "correctness":         obs.get("grounding_score", 0.0),
+            "correctness":         obs_correctness,
             "grounding":           obs.get("grounding_score", 0.0),
-            "calibration":         action["confidence"],
-            "hallucination_score": 1.0 if obs.get("is_hallucination") else 0.0,
+            "calibration":         obs_calibration if obs_calibration else action["confidence"],
+            "hallucination_score": obs_hall_score if obs_hall_score else (1.0 if obs.get("is_hallucination") else 0.0),
             "is_hallucination":    bool(obs.get("is_hallucination", False)),
+            "semantic_consistency": rb.get("semantic_consistency", 0.0),
+            "rouge_l":             rb.get("rouge_l", 0.0),
+            "bert_score":          rb.get("bert_score", 0.0),
+            "align_score":         rb.get("align_score", 0.0),
         })
 
         # Format action for logging (truncated answer)

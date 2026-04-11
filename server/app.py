@@ -1,19 +1,10 @@
 """
-HallucinationGuard-Env v4.2 — Production FastAPI Server with Stunning 3D Documentation
-
-Features:
-  - Animated 3D particle background
-  - Floating geometric objects
-  - Glassmorphism UI elements
-  - Gradient text and buttons
-  - Interactive playground with live testing
-  - Smooth animations and transitions
+HallucinationGuard-Env v4.2 — Production FastAPI Server
 
 Endpoints:
   Standard   : POST /reset  POST /step  GET /state  GET /health
-  Session    : POST /session/reset  POST /session/step  DELETE /session
-  Leaderboard: GET /leaderboard  POST /leaderboard/submit
   OpenEnv    : GET /tasks  POST /grader  POST /baseline
+  Extra      : GET /leaderboard  POST /leaderboard/submit  GET /datasets
 
 """
 
@@ -21,7 +12,7 @@ import sys, os, uuid, logging, dataclasses, enum, time, threading
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi import FastAPI, HTTPException, Header, Request
-from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse
+from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from typing import Dict, Any, Optional, List
@@ -38,1367 +29,1015 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# STUNNING 3D ANIMATED DOCUMENTATION
+# ═══════════════════════════════════════════════════════════════════════════════
+# POLISHED DEMO PAGE
 # ═══════════════════════════════════════════════════════════════════════════════
 
-STUNNING_DOCS_HTML = """
-<!DOCTYPE html>
+STUNNING_DOCS_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HallucinationGuard-Env | Production RL Environment</title>
-    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <style>
-        :root {
-            --bg-deep: #030014;
-            --bg-primary: #0a0518;
-            --bg-secondary: #120826;
-            --glass: rgba(255, 255, 255, 0.03);
-            --glass-border: rgba(255, 255, 255, 0.08);
-            --text-primary: #ffffff;
-            --text-secondary: rgba(255, 255, 255, 0.7);
-            --text-muted: rgba(255, 255, 255, 0.4);
-            --accent-1: #7c3aed;
-            --accent-2: #06b6d4;
-            --accent-3: #f43f5e;
-            --accent-4: #10b981;
-            --gradient-1: linear-gradient(135deg, #7c3aed 0%, #06b6d4 50%, #10b981 100%);
-            --gradient-2: linear-gradient(135deg, #f43f5e 0%, #7c3aed 100%);
-            --gradient-3: linear-gradient(135deg, #06b6d4 0%, #10b981 100%);
-            --glow-1: 0 0 40px rgba(124, 58, 237, 0.3);
-            --glow-2: 0 0 60px rgba(6, 182, 212, 0.2);
-        }
-
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-
-        body {
-            font-family: 'Space Grotesk', sans-serif;
-            background: var(--bg-deep);
-            color: var(--text-primary);
-            overflow-x: hidden;
-            min-height: 100vh;
-        }
-
-        /* Three.js Canvas Background */
-        #bg-canvas {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 0;
-        }
-
-        /* Animated Gradient Orbs */
-        .orb {
-            position: fixed;
-            border-radius: 50%;
-            filter: blur(80px);
-            opacity: 0.4;
-            animation: float 20s ease-in-out infinite;
-            z-index: 1;
-            pointer-events: none;
-        }
-
-        .orb-1 {
-            width: 600px;
-            height: 600px;
-            background: var(--accent-1);
-            top: -200px;
-            right: -200px;
-            animation-delay: 0s;
-        }
-
-        .orb-2 {
-            width: 500px;
-            height: 500px;
-            background: var(--accent-2);
-            bottom: -150px;
-            left: -150px;
-            animation-delay: -5s;
-        }
-
-        .orb-3 {
-            width: 400px;
-            height: 400px;
-            background: var(--accent-3);
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            animation-delay: -10s;
-        }
-
-        @keyframes float {
-            0%, 100% { transform: translate(0, 0) scale(1); }
-            25% { transform: translate(50px, -50px) scale(1.1); }
-            50% { transform: translate(-30px, 30px) scale(0.9); }
-            75% { transform: translate(-50px, -30px) scale(1.05); }
-        }
-
-        /* Grid Pattern Overlay */
-        .grid-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-image:
-                linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
-            background-size: 50px 50px;
-            z-index: 2;
-            pointer-events: none;
-        }
-
-        /* Noise Texture */
-        .noise {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
-            opacity: 0.03;
-            z-index: 3;
-            pointer-events: none;
-        }
-
-        /* Main Content Container */
-        .content {
-            position: relative;
-            z-index: 10;
-        }
-
-        /* Navigation */
-        nav {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            z-index: 100;
-            padding: 20px 40px;
-            background: rgba(3, 0, 20, 0.6);
-            backdrop-filter: blur(20px);
-            border-bottom: 1px solid var(--glass-border);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-
-        .logo {
-            display: flex;
-            align-items: center;
-            gap: 14px;
-        }
-
-        .logo-icon {
-            width: 44px;
-            height: 44px;
-            background: var(--gradient-1);
-            border-radius: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 22px;
-            box-shadow: var(--glow-1);
-            animation: pulse-glow 3s ease-in-out infinite;
-        }
-
-        @keyframes pulse-glow {
-            0%, 100% { box-shadow: 0 0 20px rgba(124, 58, 237, 0.4); }
-            50% { box-shadow: 0 0 40px rgba(124, 58, 237, 0.6), 0 0 60px rgba(6, 182, 212, 0.3); }
-        }
-
-        .logo-text {
-            font-size: 20px;
-            font-weight: 600;
-            background: var(--gradient-1);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-
-        .nav-links {
-            display: flex;
-            gap: 8px;
-        }
-
-        .nav-link {
-            padding: 10px 20px;
-            border-radius: 10px;
-            color: var(--text-secondary);
-            text-decoration: none;
-            font-size: 14px;
-            font-weight: 500;
-            transition: all 0.3s ease;
-            border: 1px solid transparent;
-        }
-
-        .nav-link:hover {
-            background: var(--glass);
-            border-color: var(--glass-border);
-            color: var(--text-primary);
-        }
-
-        .nav-link.active {
-            background: var(--gradient-1);
-            color: white;
-            box-shadow: var(--glow-1);
-        }
-
-        .nav-btn {
-            padding: 10px 24px;
-            border-radius: 10px;
-            background: var(--gradient-2);
-            color: white;
-            text-decoration: none;
-            font-size: 14px;
-            font-weight: 500;
-            transition: all 0.3s ease;
-            box-shadow: var(--glow-1);
-        }
-
-        .nav-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 0 30px rgba(244, 63, 94, 0.4);
-        }
-
-        /* Hero Section */
-        .hero {
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            text-align: center;
-            padding: 120px 40px 80px;
-        }
-
-        .hero-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 10px;
-            padding: 8px 20px;
-            background: var(--glass);
-            border: 1px solid var(--glass-border);
-            border-radius: 50px;
-            font-size: 13px;
-            color: var(--text-secondary);
-            margin-bottom: 32px;
-            backdrop-filter: blur(10px);
-        }
-
-        .badge-dot {
-            width: 8px;
-            height: 8px;
-            background: var(--accent-4);
-            border-radius: 50%;
-            animation: blink 2s ease-in-out infinite;
-        }
-
-        @keyframes blink {
-            0%, 100% { opacity: 1; box-shadow: 0 0 10px var(--accent-4); }
-            50% { opacity: 0.5; box-shadow: none; }
-        }
-
-        .hero h1 {
-            font-size: 72px;
-            font-weight: 700;
-            line-height: 1.1;
-            margin-bottom: 24px;
-            background: linear-gradient(135deg, #fff 0%, rgba(255,255,255,0.7) 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            animation: fadeInUp 1s ease-out;
-        }
-
-        .hero h1 span {
-            background: var(--gradient-1);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-
-        @keyframes fadeInUp {
-            from { opacity: 0; transform: translateY(30px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        .hero-subtitle {
-            font-size: 22px;
-            color: var(--text-secondary);
-            max-width: 700px;
-            margin-bottom: 48px;
-            line-height: 1.6;
-            animation: fadeInUp 1s ease-out 0.2s both;
-        }
-
-        .hero-buttons {
-            display: flex;
-            gap: 20px;
-            margin-bottom: 80px;
-            animation: fadeInUp 1s ease-out 0.4s both;
-        }
-
-        .btn {
-            padding: 16px 36px;
-            border-radius: 14px;
-            font-size: 16px;
-            font-weight: 600;
-            text-decoration: none;
-            display: inline-flex;
-            align-items: center;
-            gap: 10px;
-            transition: all 0.3s ease;
-            cursor: pointer;
-            border: none;
-        }
-
-        .btn-primary {
-            background: var(--gradient-1);
-            color: white;
-            box-shadow: var(--glow-1), var(--glow-2);
-        }
-
-        .btn-primary:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 0 50px rgba(124, 58, 237, 0.5), 0 0 80px rgba(6, 182, 212, 0.3);
-        }
-
-        .btn-secondary {
-            background: var(--glass);
-            color: var(--text-primary);
-            border: 1px solid var(--glass-border);
-            backdrop-filter: blur(10px);
-        }
-
-        .btn-secondary:hover {
-            background: rgba(255, 255, 255, 0.08);
-            border-color: var(--accent-1);
-            transform: translateY(-3px);
-        }
-
-        /* Stats Section */
-        .stats-container {
-            display: flex;
-            justify-content: center;
-            gap: 60px;
-            flex-wrap: wrap;
-            animation: fadeInUp 1s ease-out 0.6s both;
-        }
-
-        .stat-item {
-            text-align: center;
-        }
-
-        .stat-value {
-            font-size: 52px;
-            font-weight: 700;
-            background: var(--gradient-1);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            line-height: 1;
-        }
-
-        .stat-label {
-            font-size: 14px;
-            color: var(--text-muted);
-            margin-top: 8px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-
-        /* Floating Elements */
-        .floating-shapes {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            pointer-events: none;
-            z-index: 5;
-            overflow: hidden;
-        }
-
-        .shape {
-            position: absolute;
-            opacity: 0.1;
-            animation: shapeFloat 15s ease-in-out infinite;
-        }
-
-        .shape-1 { top: 20%; left: 10%; animation-delay: 0s; }
-        .shape-2 { top: 60%; left: 80%; animation-delay: -3s; }
-        .shape-3 { top: 80%; left: 20%; animation-delay: -6s; }
-        .shape-4 { top: 30%; left: 70%; animation-delay: -9s; }
-        .shape-5 { top: 70%; left: 50%; animation-delay: -12s; }
-
-        @keyframes shapeFloat {
-            0%, 100% { transform: translateY(0) rotate(0deg); }
-            50% { transform: translateY(-30px) rotate(180deg); }
-        }
-
-        /* Section Container */
-        .section {
-            padding: 100px 40px;
-            max-width: 1400px;
-            margin: 0 auto;
-        }
-
-        .section-header {
-            text-align: center;
-            margin-bottom: 60px;
-        }
-
-        .section-title {
-            font-size: 48px;
-            font-weight: 700;
-            margin-bottom: 16px;
-            background: linear-gradient(135deg, #fff 0%, rgba(255,255,255,0.8) 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-
-        .section-subtitle {
-            font-size: 18px;
-            color: var(--text-secondary);
-        }
-
-        /* Glass Cards */
-        .cards-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-            gap: 24px;
-        }
-
-        .card {
-            background: var(--glass);
-            border: 1px solid var(--glass-border);
-            border-radius: 20px;
-            padding: 32px;
-            backdrop-filter: blur(20px);
-            transition: all 0.4s ease;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 2px;
-            background: var(--gradient-1);
-            opacity: 0;
-            transition: opacity 0.3s ease;
-        }
-
-        .card:hover {
-            transform: translateY(-8px);
-            border-color: var(--accent-1);
-            box-shadow: var(--glow-1), 0 20px 40px rgba(0,0,0,0.3);
-        }
-
-        .card:hover::before {
-            opacity: 1;
-        }
-
-        .card-icon {
-            width: 56px;
-            height: 56px;
-            border-radius: 16px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 28px;
-            margin-bottom: 20px;
-            position: relative;
-        }
-
-        .card-icon.green {
-            background: linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(6, 182, 212, 0.2) 100%);
-            box-shadow: 0 0 30px rgba(16, 185, 129, 0.2);
-        }
-
-        .card-icon.yellow {
-            background: linear-gradient(135deg, rgba(251, 191, 36, 0.2) 0%, rgba(249, 115, 22, 0.2) 100%);
-            box-shadow: 0 0 30px rgba(251, 191, 36, 0.2);
-        }
-
-        .card-icon.red {
-            background: linear-gradient(135deg, rgba(244, 63, 94, 0.2) 0%, rgba(124, 58, 237, 0.2) 100%);
-            box-shadow: 0 0 30px rgba(244, 63, 94, 0.2);
-        }
-
-        .card-title {
-            font-size: 22px;
-            font-weight: 600;
-            margin-bottom: 12px;
-        }
-
-        .card-desc {
-            color: var(--text-secondary);
-            font-size: 15px;
-            line-height: 1.6;
-            margin-bottom: 20px;
-        }
-
-        .card-badge {
-            display: inline-block;
-            padding: 6px 14px;
-            border-radius: 8px;
-            font-size: 12px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .badge-beginner {
-            background: rgba(16, 185, 129, 0.15);
-            color: var(--accent-4);
-            border: 1px solid rgba(16, 185, 129, 0.3);
-        }
-
-        .badge-intermediate {
-            background: rgba(251, 191, 36, 0.15);
-            color: #fbbf24;
-            border: 1px solid rgba(251, 191, 36, 0.3);
-        }
-
-        .badge-advanced {
-            background: rgba(244, 63, 94, 0.15);
-            color: var(--accent-3);
-            border: 1px solid rgba(244, 63, 94, 0.3);
-        }
-
-        /* Playground Section */
-        .playground {
-            background: var(--glass);
-            border: 1px solid var(--glass-border);
-            border-radius: 24px;
-            overflow: hidden;
-            backdrop-filter: blur(20px);
-        }
-
-        .playground-header {
-            display: flex;
-            background: rgba(255, 255, 255, 0.02);
-            border-bottom: 1px solid var(--glass-border);
-        }
-
-        .playground-tab {
-            padding: 18px 32px;
-            font-size: 14px;
-            font-weight: 500;
-            color: var(--text-muted);
-            cursor: pointer;
-            border-bottom: 2px solid transparent;
-            transition: all 0.3s ease;
-        }
-
-        .playground-tab:hover {
-            color: var(--text-secondary);
-            background: rgba(255, 255, 255, 0.02);
-        }
-
-        .playground-tab.active {
-            color: var(--accent-1);
-            border-bottom-color: var(--accent-1);
-            background: rgba(124, 58, 237, 0.05);
-        }
-
-        .playground-body {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            min-height: 500px;
-        }
-
-        .playground-left, .playground-right {
-            padding: 32px;
-        }
-
-        .playground-left {
-            border-right: 1px solid var(--glass-border);
-        }
-
-        .playground-label {
-            font-size: 11px;
-            font-weight: 600;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            margin-bottom: 16px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .playground-label::before {
-            content: '';
-            width: 8px;
-            height: 8px;
-            background: var(--accent-1);
-            border-radius: 2px;
-        }
-
-        .playground-textarea {
-            width: 100%;
-            height: 280px;
-            background: rgba(0, 0, 0, 0.3);
-            border: 1px solid var(--glass-border);
-            border-radius: 12px;
-            padding: 20px;
-            font-family: 'Fira Code', monospace;
-            font-size: 13px;
-            color: var(--text-primary);
-            resize: none;
-            outline: none;
-            transition: all 0.3s ease;
-        }
-
-        .playground-textarea:focus {
-            border-color: var(--accent-1);
-            box-shadow: 0 0 20px rgba(124, 58, 237, 0.2);
-        }
-
-        .btn-group {
-            display: flex;
-            gap: 16px;
-            margin-top: 20px;
-        }
-
-        .result-box {
-            width: 100%;
-            height: 380px;
-            background: rgba(0, 0, 0, 0.3);
-            border: 1px solid var(--glass-border);
-            border-radius: 12px;
-            padding: 20px;
-            font-family: 'Fira Code', monospace;
-            font-size: 12px;
-            color: var(--text-secondary);
-            white-space: pre-wrap;
-            overflow-y: auto;
-            position: relative;
-        }
-
-        .result-box.success {
-            border-color: var(--accent-4);
-            box-shadow: 0 0 20px rgba(16, 185, 129, 0.1);
-        }
-
-        .result-box.error {
-            border-color: var(--accent-3);
-            box-shadow: 0 0 20px rgba(244, 63, 94, 0.1);
-        }
-
-        /* Endpoints Table */
-        .endpoints-container {
-            background: var(--glass);
-            border: 1px solid var(--glass-border);
-            border-radius: 20px;
-            overflow: hidden;
-            backdrop-filter: blur(20px);
-        }
-
-        .endpoint-row {
-            display: grid;
-            grid-template-columns: 100px 1fr 2fr;
-            padding: 20px 32px;
-            border-bottom: 1px solid var(--glass-border);
-            transition: all 0.3s ease;
-            align-items: center;
-        }
-
-        .endpoint-row:last-child {
-            border-bottom: none;
-        }
-
-        .endpoint-row:hover {
-            background: rgba(255, 255, 255, 0.02);
-        }
-
-        .method-badge {
-            display: inline-flex;
-            padding: 6px 12px;
-            border-radius: 6px;
-            font-size: 11px;
-            font-weight: 700;
-            font-family: 'Fira Code', monospace;
-            letter-spacing: 0.5px;
-        }
-
-        .method-get {
-            background: rgba(16, 185, 129, 0.15);
-            color: var(--accent-4);
-            border: 1px solid rgba(16, 185, 129, 0.3);
-        }
-
-        .method-post {
-            background: rgba(124, 58, 237, 0.15);
-            color: var(--accent-1);
-            border: 1px solid rgba(124, 58, 237, 0.3);
-        }
-
-        .method-delete {
-            background: rgba(244, 63, 94, 0.15);
-            color: var(--accent-3);
-            border: 1px solid rgba(244, 63, 94, 0.3);
-        }
-
-        .endpoint-path {
-            font-family: 'Fira Code', monospace;
-            font-size: 14px;
-            color: var(--text-primary);
-            padding-left: 20px;
-        }
-
-        .endpoint-desc {
-            color: var(--text-secondary);
-            font-size: 14px;
-            padding-left: 20px;
-        }
-
-        /* Features Grid */
-        .features-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 20px;
-            margin-top: 40px;
-        }
-
-        .feature-item {
-            display: flex;
-            align-items: flex-start;
-            gap: 16px;
-            padding: 24px;
-            background: var(--glass);
-            border: 1px solid var(--glass-border);
-            border-radius: 16px;
-            transition: all 0.3s ease;
-        }
-
-        .feature-item:hover {
-            border-color: var(--accent-1);
-            transform: translateX(8px);
-        }
-
-        .feature-icon {
-            width: 40px;
-            height: 40px;
-            background: var(--gradient-1);
-            border-radius: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 18px;
-            flex-shrink: 0;
-        }
-
-        .feature-text h4 {
-            font-size: 16px;
-            font-weight: 600;
-            margin-bottom: 4px;
-        }
-
-        .feature-text p {
-            font-size: 13px;
-            color: var(--text-secondary);
-        }
-
-        /* Footer */
-        footer {
-            padding: 60px 40px;
-            border-top: 1px solid var(--glass-border);
-            text-align: center;
-        }
-
-        .footer-text {
-            color: var(--text-muted);
-            font-size: 14px;
-            margin-bottom: 20px;
-        }
-
-        .footer-links {
-            display: flex;
-            justify-content: center;
-            gap: 32px;
-            flex-wrap: wrap;
-        }
-
-        .footer-link {
-            color: var(--text-secondary);
-            text-decoration: none;
-            font-size: 14px;
-            transition: color 0.3s ease;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .footer-link:hover {
-            color: var(--accent-1);
-        }
-
-        /* Responsive */
-        @media (max-width: 900px) {
-            .hero h1 { font-size: 48px; }
-            .playground-body { grid-template-columns: 1fr; }
-            .playground-left { border-right: none; border-bottom: 1px solid var(--glass-border); }
-            .endpoint-row { grid-template-columns: 1fr; gap: 8px; }
-            .nav-links { display: none; }
-            nav { padding: 16px 20px; }
-            .section { padding: 60px 20px; }
-        }
-
-        /* Scrollbar */
-        ::-webkit-scrollbar { width: 8px; height: 8px; }
-        ::-webkit-scrollbar-track { background: var(--bg-secondary); }
-        ::-webkit-scrollbar-thumb { background: var(--glass-border); border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: var(--accent-1); }
-
-        /* Code syntax highlighting */
-        .json-key { color: #7c3aed; }
-        .json-string { color: #10b981; }
-        .json-number { color: #06b6d4; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HallucinationGuard-Env · OpenEnv</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23080c14'/><text x='50' y='68' font-size='55' text-anchor='middle' fill='%23f59e0b' font-family='sans-serif' font-weight='bold'>H</text></svg>">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #080c14;
+  --surface: #0d1321;
+  --surface2: #111827;
+  --border: #1e2d45;
+  --border2: #243450;
+  --text: #e2eaf5;
+  --muted: #6b8aad;
+  --amber: #f59e0b;
+  --amber-dim: #78490a;
+  --teal: #2dd4bf;
+  --teal-dim: #0f4f49;
+  --red: #f87171;
+  --red-dim: #4c1515;
+  --blue: #60a5fa;
+  --blue-dim: #1e3a5f;
+  --green: #4ade80;
+  --green-dim: #14532d;
+  --font: 'Space Grotesk', system-ui, sans-serif;
+  --mono: 'Fira Code', monospace;
+}
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ── NOISE TEXTURE OVERLAY ── */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.4;
+}
+
+/* ── HERO ── */
+.hero {
+  position: relative;
+  padding: 64px 40px 56px;
+  background: linear-gradient(135deg, #0a1628 0%, #080c14 50%, #0a1420 100%);
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+}
+.hero::after {
+  content: '';
+  position: absolute;
+  top: -60px; right: -60px;
+  width: 400px; height: 400px;
+  background: radial-gradient(circle, rgba(245,158,11,0.07) 0%, transparent 70%);
+  pointer-events: none;
+}
+.hero::before {
+  content: '';
+  position: absolute;
+  bottom: -80px; left: 30%;
+  width: 500px; height: 300px;
+  background: radial-gradient(ellipse, rgba(45,212,191,0.05) 0%, transparent 70%);
+  pointer-events: none;
+}
+.hero-inner { max-width: 1100px; margin: 0 auto; position: relative; z-index: 1; }
+.hero-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: rgba(245,158,11,0.1);
+  border: 1px solid rgba(245,158,11,0.25);
+  color: var(--amber);
+  padding: 4px 12px; border-radius: 100px;
+  font-size: 11px; font-weight: 600; letter-spacing: 1px;
+  text-transform: uppercase; margin-bottom: 20px;
+}
+.hero-badge::before { content: '●'; font-size: 8px; animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+.hero h1 {
+  font-size: clamp(28px, 5vw, 48px);
+  font-weight: 700;
+  letter-spacing: -1px;
+  line-height: 1.1;
+  margin-bottom: 16px;
+}
+.hero h1 .accent { color: var(--amber); }
+.hero h1 .accent2 { color: var(--teal); }
+.hero-sub {
+  font-size: 16px; color: var(--muted); max-width: 600px;
+  margin-bottom: 36px; font-weight: 400; line-height: 1.7;
+}
+.stats-row {
+  display: flex; gap: 32px; flex-wrap: wrap;
+}
+.stat-pill {
+  display: flex; flex-direction: column;
+  animation: fadeUp 0.6s ease both;
+}
+.stat-pill:nth-child(2) { animation-delay: 0.1s; }
+.stat-pill:nth-child(3) { animation-delay: 0.2s; }
+.stat-pill:nth-child(4) { animation-delay: 0.3s; }
+@keyframes fadeUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:none} }
+.stat-num {
+  font-size: 32px; font-weight: 700;
+  background: linear-gradient(135deg, var(--amber), var(--teal));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+  line-height: 1;
+}
+.stat-lbl { font-size: 12px; color: var(--muted); margin-top: 4px; font-weight: 500; letter-spacing: 0.5px; }
+.ver-chip {
+  position: absolute; top: 24px; right: 40px;
+  font-family: var(--mono); font-size: 11px;
+  color: var(--muted); border: 1px solid var(--border2);
+  padding: 4px 10px; border-radius: 4px;
+  background: rgba(13,19,33,0.8);
+}
+
+/* ── NAV ── */
+nav {
+  position: sticky; top: 0; z-index: 100;
+  background: rgba(8,12,20,0.95);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+  padding: 0 40px;
+}
+.nav-inner {
+  max-width: 1100px; margin: 0 auto;
+  display: flex; gap: 0;
+}
+.tab {
+  padding: 14px 20px;
+  font-size: 13px; font-weight: 500;
+  color: var(--muted); cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s; letter-spacing: 0.3px;
+  user-select: none;
+}
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--amber); border-bottom-color: var(--amber); }
+
+/* ── MAIN ── */
+main { max-width: 1100px; margin: 0 auto; padding: 40px 40px 80px; }
+.panel { display: none; animation: fadeIn 0.3s ease; }
+.panel.active { display: block; }
+@keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:none} }
+
+/* ── CARDS ── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+  margin-bottom: 16px;
+  transition: border-color 0.2s;
+}
+.card:hover { border-color: var(--border2); }
+.card h3 { font-size: 15px; font-weight: 600; margin-bottom: 10px; }
+.card p { font-size: 14px; color: var(--muted); line-height: 1.7; }
+.card p strong { color: var(--text); }
+
+/* ── HOW IT WORKS ── */
+.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
+.step {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px 20px;
+  text-align: center;
+  position: relative;
+}
+.step-icon {
+  width: 48px; height: 48px;
+  border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px;
+  margin: 0 auto 14px;
+}
+.step:nth-child(1) .step-icon { background: rgba(245,158,11,0.12); border: 1px solid rgba(245,158,11,0.2); }
+.step:nth-child(2) .step-icon { background: rgba(45,212,191,0.12); border: 1px solid rgba(45,212,191,0.2); }
+.step:nth-child(3) .step-icon { background: rgba(96,165,250,0.12); border: 1px solid rgba(96,165,250,0.2); }
+.step-num {
+  position: absolute; top: 12px; right: 12px;
+  font-family: var(--mono); font-size: 10px;
+  color: var(--border2); font-weight: 500;
+}
+.step h4 { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+.step p { font-size: 12px; color: var(--muted); line-height: 1.6; }
+.step-arrow { display: flex; align-items: center; justify-content: center; color: var(--border2); font-size: 20px; }
+
+/* ── TASK CARDS ── */
+.task-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid;
+  border-radius: 12px;
+  padding: 20px 24px;
+  margin-bottom: 14px;
+  display: flex; gap: 16px; align-items: flex-start;
+}
+.task-card.beginner { border-left-color: var(--green); }
+.task-card.intermediate { border-left-color: var(--blue); }
+.task-card.advanced { border-left-color: var(--red); }
+.task-icon { font-size: 28px; flex-shrink: 0; margin-top: 2px; }
+.task-body { flex: 1; }
+.task-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+.task-head h3 { font-size: 15px; font-weight: 600; }
+.diff-badge {
+  font-size: 10px; font-weight: 700; padding: 2px 8px;
+  border-radius: 100px; text-transform: uppercase; letter-spacing: 1px;
+}
+.diff-badge.beginner { background: var(--green-dim); color: var(--green); }
+.diff-badge.intermediate { background: var(--blue-dim); color: var(--blue); }
+.diff-badge.advanced { background: var(--red-dim); color: var(--red); }
+.data-count {
+  font-family: var(--mono); font-size: 11px;
+  color: var(--muted); margin-left: auto;
+}
+.task-body p { font-size: 13px; color: var(--muted); line-height: 1.6; }
+.dataset-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.ds-chip {
+  font-size: 10px; font-family: var(--mono);
+  padding: 2px 8px; border-radius: 4px;
+  background: var(--surface2); border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+/* ── API TABLE ── */
+.api-table-wrap { overflow: auto; border-radius: 10px; border: 1px solid var(--border); }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th {
+  text-align: left; padding: 12px 16px;
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+  font-size: 11px; color: var(--muted);
+  font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px;
+}
+td { padding: 12px 16px; border-bottom: 1px solid var(--border); color: var(--text); }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: rgba(255,255,255,0.015); }
+.method {
+  font-family: var(--mono); font-size: 10px; font-weight: 600;
+  padding: 3px 8px; border-radius: 4px; letter-spacing: 0.5px;
+}
+.method.get { background: var(--green-dim); color: var(--green); }
+.method.post { background: var(--blue-dim); color: var(--blue); }
+.endpoint { font-family: var(--mono); font-size: 12px; color: var(--amber); }
+.td-desc { color: var(--muted); font-size: 12px; }
+
+/* ── CODE BLOCK ── */
+.code-block {
+  background: #050810;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+.code-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 16px;
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+}
+.code-lang { font-size: 11px; color: var(--muted); font-family: var(--mono); }
+.copy-btn {
+  font-size: 11px; color: var(--muted);
+  background: none; border: 1px solid var(--border);
+  padding: 3px 10px; border-radius: 4px; cursor: pointer;
+  font-family: var(--font); transition: all 0.15s;
+}
+.copy-btn:hover { color: var(--text); border-color: var(--border2); }
+.code-body {
+  padding: 20px;
+  font-family: var(--mono); font-size: 12px;
+  line-height: 1.8; color: #c9d4e8;
+  overflow-x: auto; white-space: pre;
+}
+.code-body .cm { color: #4a6a8a; }
+.code-body .kw { color: var(--amber); }
+.code-body .st { color: var(--teal); }
+.code-body .fn { color: var(--blue); }
+.code-body .hl { color: var(--green); }
+
+/* ── PLAYGROUND ── */
+.pg-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.pg-label {
+  font-size: 11px; font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.8px;
+  margin-bottom: 8px; display: block;
+}
+.pg-select, .pg-input, .pg-textarea {
+  width: 100%; padding: 10px 14px;
+  background: var(--surface2); border: 1px solid var(--border2);
+  border-radius: 8px; font-size: 13px; font-family: var(--font);
+  color: var(--text); outline: none; transition: border-color 0.2s;
+  appearance: none;
+}
+.pg-select:focus, .pg-input:focus, .pg-textarea:focus {
+  border-color: var(--amber);
+}
+.pg-textarea { min-height: 80px; resize: vertical; line-height: 1.5; }
+.pg-select option { background: var(--surface2); }
+.slider-wrap { margin-top: 4px; }
+.slider-row { display: flex; align-items: center; gap: 12px; }
+input[type=range] {
+  flex: 1; height: 4px; border-radius: 2px;
+  background: var(--border2); outline: none; cursor: pointer;
+  accent-color: var(--amber);
+}
+.slider-val {
+  font-family: var(--mono); font-size: 13px; font-weight: 600;
+  color: var(--amber); min-width: 30px; text-align: right;
+}
+.btn-row { display: flex; gap: 10px; margin-top: 16px; }
+.btn {
+  padding: 10px 20px; border-radius: 8px;
+  font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: all 0.15s; border: 1px solid;
+  font-family: var(--font); letter-spacing: 0.3px;
+}
+.btn-primary {
+  background: var(--amber); color: #0a0a0a;
+  border-color: var(--amber);
+}
+.btn-primary:hover { background: #fbbf24; }
+.btn-primary:active { transform: scale(0.97); }
+.btn-secondary {
+  background: transparent; color: var(--text);
+  border-color: var(--border2);
+}
+.btn-secondary:hover { background: var(--surface2); border-color: var(--muted); }
+.btn-secondary:disabled { opacity: 0.4; cursor: not-allowed; }
+.input-group { margin-bottom: 14px; }
+
+/* ── CONTEXT DISPLAY ── */
+.context-box {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px; padding: 16px;
+  font-size: 13px; line-height: 1.7;
+  color: var(--muted); min-height: 80px;
+  max-height: 180px; overflow-y: auto;
+  margin-bottom: 4px;
+}
+.context-box .q-highlight {
+  background: rgba(245,158,11,0.15);
+  border: 1px solid rgba(245,158,11,0.2);
+  border-radius: 4px; padding: 2px 6px;
+  color: var(--text); font-weight: 500;
+}
+.empty-hint { color: var(--border2); font-style: italic; font-size: 12px; }
+
+/* ── EPISODE PROGRESS ── */
+.ep-progress { margin-bottom: 16px; }
+.ep-bar-bg {
+  height: 4px; background: var(--border);
+  border-radius: 2px; overflow: hidden; margin-top: 6px;
+}
+.ep-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--amber), var(--teal));
+  border-radius: 2px;
+  transition: width 0.4s ease;
+}
+.ep-meta { display: flex; justify-content: space-between; align-items: center; }
+.ep-step { font-size: 11px; color: var(--muted); font-family: var(--mono); }
+.halluc-badge {
+  display: none;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.5px;
+  padding: 3px 10px; border-radius: 100px;
+}
+.halluc-badge.show { display: inline-block; }
+.halluc-badge.yes { background: var(--red-dim); color: var(--red); border: 1px solid rgba(248,113,113,0.3); }
+.halluc-badge.no { background: var(--green-dim); color: var(--green); border: 1px solid rgba(74,222,128,0.3); }
+
+/* ── REWARD BREAKDOWN ── */
+.reward-section { margin-top: 16px; }
+.reward-title {
+  font-size: 11px; font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 12px;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.total-reward-val {
+  font-family: var(--mono); font-size: 16px;
+  font-weight: 700; color: var(--amber);
+}
+.reward-bars { display: flex; flex-direction: column; gap: 8px; }
+.reward-bar-row { display: flex; align-items: center; gap: 10px; }
+.rb-label { font-size: 11px; color: var(--muted); width: 130px; flex-shrink: 0; font-family: var(--mono); }
+.rb-track {
+  flex: 1; height: 6px; background: var(--border);
+  border-radius: 3px; overflow: hidden;
+}
+.rb-fill {
+  height: 100%; border-radius: 3px;
+  transition: width 0.5s cubic-bezier(.4,0,.2,1);
+  width: 0%;
+}
+.rb-val { font-family: var(--mono); font-size: 11px; color: var(--text); width: 36px; text-align: right; flex-shrink: 0; }
+
+/* ── RAW RESPONSE ── */
+.raw-toggle {
+  font-size: 11px; color: var(--muted); cursor: pointer;
+  display: flex; align-items: center; gap: 6px; margin-top: 12px;
+  user-select: none;
+}
+.raw-toggle:hover { color: var(--text); }
+.raw-box {
+  display: none; margin-top: 8px;
+  background: #050810; border: 1px solid var(--border);
+  border-radius: 8px; padding: 14px;
+  font-family: var(--mono); font-size: 11px;
+  color: var(--muted); white-space: pre-wrap;
+  max-height: 200px; overflow-y: auto; line-height: 1.6;
+}
+.raw-box.open { display: block; }
+
+/* ── SECTION HEADING ── */
+.section-head { margin-bottom: 20px; }
+.section-head h2 { font-size: 20px; font-weight: 700; letter-spacing: -0.3px; }
+.section-head p { font-size: 13px; color: var(--muted); margin-top: 4px; }
+
+/* ── REWARD COLORS ── */
+.rc-0 { background: var(--green); }
+.rc-1 { background: var(--teal); }
+.rc-2 { background: var(--blue); }
+.rc-3 { background: var(--amber); }
+.rc-4 { background: #a78bfa; }
+.rc-5 { background: #fb923c; }
+.rc-6 { background: #34d399; }
+.rc-7 { background: #f472b6; }
+.rc-8 { background: #e879f9; }
+
+/* ── STATUS INDICATOR ── */
+.status-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  display: inline-block; background: var(--muted);
+}
+.status-dot.ready { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+.status-dot.done { background: var(--teal); box-shadow: 0 0 6px var(--teal); }
+
+/* ── RESPONSIVE ── */
+@media(max-width: 768px) {
+  .hero { padding: 48px 20px 40px; }
+  .ver-chip { display: none; }
+  main { padding: 24px 20px 60px; }
+  nav { padding: 0 20px; }
+  .stats-row { gap: 20px; }
+  .steps { grid-template-columns: 1fr; }
+  .step-arrow { display: none; }
+  .pg-grid { grid-template-columns: 1fr; }
+  .tab { padding: 12px 14px; font-size: 12px; }
+}
+</style>
 </head>
 <body>
-    <!-- Three.js Canvas -->
-    <canvas id="bg-canvas"></canvas>
 
-    <!-- Animated Orbs -->
-    <div class="orb orb-1"></div>
-    <div class="orb orb-2"></div>
-    <div class="orb orb-3"></div>
+<!-- ══ HERO ══ -->
+<section class="hero">
+  <div class="hero-inner">
+    <div class="hero-badge">OpenEnv · RL Environment</div>
+    <div class="ver-chip">v4.2.0</div>
+    <h1>
+      <span class="accent">Hallucination</span><span class="accent2">Guard</span>‑Env
+    </h1>
+    <p class="hero-sub">
+      Train AI models to answer <strong>only from verified context</strong> — with a 9-component reward system that penalizes fabrication and rewards factual grounding, citation accuracy, and calibrated confidence.
+    </p>
+    <div class="stats-row">
+      <div class="stat-pill">
+        <span class="stat-num" data-target="1000000" data-suffix="M+">1M+</span>
+        <span class="stat-lbl">Examples</span>
+      </div>
+      <div class="stat-pill">
+        <span class="stat-num">38</span>
+        <span class="stat-lbl">Datasets</span>
+      </div>
+      <div class="stat-pill">
+        <span class="stat-num">3</span>
+        <span class="stat-lbl">Task Tiers</span>
+      </div>
+      <div class="stat-pill">
+        <span class="stat-num">9</span>
+        <span class="stat-lbl">Reward Components</span>
+      </div>
+    </div>
+  </div>
+</section>
 
-    <!-- Grid Overlay -->
-    <div class="grid-overlay"></div>
+<!-- ══ NAV ══ -->
+<nav>
+  <div class="nav-inner">
+    <div class="tab active" onclick="showTab('overview',this)">Overview</div>
+    <div class="tab" onclick="showTab('tasks',this)">Tasks</div>
+    <div class="tab" onclick="showTab('api',this)">API Reference</div>
+    <div class="tab" onclick="showTab('playground',this)">Playground</div>
+  </div>
+</nav>
 
-    <!-- Noise Texture -->
-    <div class="noise"></div>
+<!-- ══ MAIN ══ -->
+<main>
 
-    <!-- Floating Shapes -->
-    <div class="floating-shapes">
-        <svg class="shape shape-1" width="60" height="60" viewBox="0 0 60 60">
-            <polygon points="30,0 60,60 0,60" fill="none" stroke="rgba(124,58,237,0.3)" stroke-width="1"/>
-        </svg>
-        <svg class="shape shape-2" width="80" height="80" viewBox="0 0 80 80">
-            <circle cx="40" cy="40" r="38" fill="none" stroke="rgba(6,182,212,0.3)" stroke-width="1"/>
-        </svg>
-        <svg class="shape shape-3" width="70" height="70" viewBox="0 0 70 70">
-            <rect x="5" y="5" width="60" height="60" fill="none" stroke="rgba(244,63,94,0.3)" stroke-width="1" transform="rotate(45 35 35)"/>
-        </svg>
-        <svg class="shape shape-4" width="50" height="50" viewBox="0 0 50 50">
-            <polygon points="25,0 50,25 25,50 0,25" fill="none" stroke="rgba(16,185,129,0.3)" stroke-width="1"/>
-        </svg>
-        <svg class="shape shape-5" width="60" height="60" viewBox="0 0 60 60">
-            <polygon points="30,0 60,30 30,60 0,30" fill="none" stroke="rgba(124,58,237,0.3)" stroke-width="1"/>
-        </svg>
+<!-- ─ OVERVIEW ─ -->
+<div id="overview" class="panel active">
+  <div class="section-head">
+    <h2>How it works</h2>
+    <p>Three primitives. Nine reward signals. One goal: no hallucinations.</p>
+  </div>
+  <div class="steps">
+    <div class="step">
+      <span class="step-num">01</span>
+      <div class="step-icon">🔄</div>
+      <h4>reset()</h4>
+      <p>Sample a question + context document from one of 38 curated datasets, stratified by difficulty tier.</p>
+    </div>
+    <div class="step">
+      <span class="step-num">02</span>
+      <div class="step-icon">📤</div>
+      <h4>step(answer)</h4>
+      <p>Submit your answer with confidence and a source quote. Receive a dense reward signal across all 9 components.</p>
+    </div>
+    <div class="step">
+      <span class="step-num">03</span>
+      <div class="step-icon">📊</div>
+      <h4>grade()</h4>
+      <p>Aggregate episode rewards into a task score. Track accuracy, hallucination rate, and skill rating over time.</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>9-Component Reward System</h3>
+    <p>Every answer is graded on <strong>factual correctness</strong>, <strong>source grounding</strong>, <strong>citation accuracy</strong>, <strong>confidence calibration</strong>, <strong>semantic consistency</strong>, <strong>hallucination detection</strong>, <strong>ROUGE-L</strong>, <strong>BERTScore</strong>, and <strong>AlignScore</strong>. Each component is weighted and combined into a single scalar reward in <strong>[0, 1]</strong>. Confident wrong answers are penalized harder than uncertain ones.</p>
+  </div>
+  <div class="card">
+    <h3>Curriculum Progression</h3>
+    <p>Episodes advance from <strong>Beginner</strong> (single-hop factual QA with unambiguous ground-truth) through <strong>Intermediate</strong> (multi-hop synthesis across multiple context sentences) to <strong>Advanced</strong> (adversarial prompts where confident refusals score best). The environment tracks a live <strong>skill rating</strong> and adjusts difficulty sampling accordingly.</p>
+  </div>
+</div>
+
+<!-- ─ TASKS ─ -->
+<div id="tasks" class="panel">
+  <div class="section-head">
+    <h2>Task Tiers</h2>
+    <p>Three progressively harder tasks drawn from 38 datasets with 1M+ examples.</p>
+  </div>
+  <div class="task-card beginner">
+    <div class="task-icon">🟢</div>
+    <div class="task-body">
+      <div class="task-head">
+        <h3>Factual Grounding</h3>
+        <span class="diff-badge beginner">Beginner</span>
+        <span class="data-count">~450K examples</span>
+      </div>
+      <p>Answer straightforward factual questions from a short context passage. Single-hop retrieval with unambiguous ground truth. The grader rewards precise citation and heavily penalizes adding information not found in the context.</p>
+      <div class="dataset-chips">
+        <span class="ds-chip">SQuAD</span>
+        <span class="ds-chip">BoolQ</span>
+        <span class="ds-chip">OpenBookQA</span>
+        <span class="ds-chip">ARC</span>
+        <span class="ds-chip">TriviaQA</span>
+        <span class="ds-chip">+8 more</span>
+      </div>
+    </div>
+  </div>
+  <div class="task-card intermediate">
+    <div class="task-icon">🔵</div>
+    <div class="task-body">
+      <div class="task-head">
+        <h3>Multi-Hop Synthesis</h3>
+        <span class="diff-badge intermediate">Intermediate</span>
+        <span class="data-count">~380K examples</span>
+      </div>
+      <p>Synthesize evidence from multiple context sentences to reach an answer. Requires connecting disparate facts without fabricating bridge claims. AlignScore and BERTScore are weighted more heavily at this tier.</p>
+      <div class="dataset-chips">
+        <span class="ds-chip">HotpotQA</span>
+        <span class="ds-chip">CoQA</span>
+        <span class="ds-chip">NQ-Open</span>
+        <span class="ds-chip">MS-MARCO</span>
+        <span class="ds-chip">MuSiQue</span>
+        <span class="ds-chip">+7 more</span>
+      </div>
+    </div>
+  </div>
+  <div class="task-card advanced">
+    <div class="task-icon">🔴</div>
+    <div class="task-body">
+      <div class="task-head">
+        <h3>Adversarial Resistance</h3>
+        <span class="diff-badge advanced">Advanced</span>
+        <span class="data-count">~210K examples</span>
+      </div>
+      <p>Resist adversarial prompts designed to elicit hallucinations. Many questions are deliberately unanswerable — confident refusals with low confidence score better than fabricated plausible-sounding answers.</p>
+      <div class="dataset-chips">
+        <span class="ds-chip">HaluEval</span>
+        <span class="ds-chip">TruthfulQA</span>
+        <span class="ds-chip">FEVER</span>
+        <span class="ds-chip">Climate-FEVER</span>
+        <span class="ds-chip">WittyQA</span>
+        <span class="ds-chip">+6 more</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─ API ─ -->
+<div id="api" class="panel">
+  <div class="section-head">
+    <h2>API Reference</h2>
+    <p>RESTful JSON API. All endpoints accept and return <code style="font-family:var(--mono);font-size:12px;color:var(--amber)">application/json</code>. No auth required.</p>
+  </div>
+  <div class="api-table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Method</th>
+          <th>Endpoint</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td><span class="method post">POST</span></td><td class="endpoint">/reset</td><td class="td-desc">Start episode — returns question, context, difficulty, episode_id</td></tr>
+        <tr><td><span class="method post">POST</span></td><td class="endpoint">/step</td><td class="td-desc">Submit answer with confidence + source_quote, receive reward breakdown</td></tr>
+        <tr><td><span class="method get">GET</span></td><td class="endpoint">/state</td><td class="td-desc">Current episode metadata — accuracy, hallucination_rate, skill_rating</td></tr>
+        <tr><td><span class="method get">GET</span></td><td class="endpoint">/tasks</td><td class="td-desc">List all 3 tasks with action schema</td></tr>
+        <tr><td><span class="method post">POST</span></td><td class="endpoint">/grader</td><td class="td-desc">Score a completed episode (0.0 – 1.0) from rewards + infos</td></tr>
+        <tr><td><span class="method post">POST</span></td><td class="endpoint">/baseline</td><td class="td-desc">Run heuristic baseline across all 3 tasks</td></tr>
+        <tr><td><span class="method get">GET</span></td><td class="endpoint">/metadata</td><td class="td-desc">Environment name, version, license</td></tr>
+        <tr><td><span class="method get">GET</span></td><td class="endpoint">/schema</td><td class="td-desc">Full JSON schemas for action, observation, state</td></tr>
+        <tr><td><span class="method get">GET</span></td><td class="endpoint">/health</td><td class="td-desc">Health check — returns {"status":"healthy"}</td></tr>
+        <tr><td><span class="method post">POST</span></td><td class="endpoint">/mcp</td><td class="td-desc">JSON-RPC 2.0 tool discovery for MCP clients</td></tr>
+        <tr><td><span class="method get">GET</span></td><td class="endpoint">/leaderboard</td><td class="td-desc">Ranked leaderboard by avg_reward</td></tr>
+        <tr><td><span class="method post">POST</span></td><td class="endpoint">/leaderboard/submit</td><td class="td-desc">Submit model results for ranking</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div style="margin-top:28px">
+    <div class="section-head"><h2>Quick Start</h2><p>Three commands to run your first episode.</p></div>
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-lang">bash</span>
+        <button class="copy-btn" onclick="copyCode(this,'install')">Copy</button>
+      </div>
+      <div class="code-body" id="install"><span class="cm"># Install and launch</span>
+<span class="kw">pip</span> install -e .
+<span class="kw">uvicorn</span> server.app:app --port 7860
+
+<span class="cm"># Run heuristic baseline</span>
+<span class="kw">python</span> inference.py --heuristic --env-url http://localhost:7860</div>
+    </div>
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-lang">python</span>
+        <button class="copy-btn" onclick="copyCode(this,'pycode')">Copy</button>
+      </div>
+      <div class="code-body" id="pycode"><span class="kw">import</span> requests
+
+BASE = <span class="st">"http://localhost:7860"</span>
+
+<span class="cm"># 1. Reset — get a question + context</span>
+obs = requests.<span class="fn">post</span>(<span class="st">f"{BASE}/reset"</span>, json={<span class="st">"difficulty"</span>: <span class="st">"beginner"</span>}).json()
+session_id = obs[<span class="st">"session_id"</span>]
+<span class="fn">print</span>(obs[<span class="st">"question"</span>])
+
+<span class="cm"># 2. Step — submit your answer</span>
+result = requests.<span class="fn">post</span>(<span class="st">f"{BASE}/step"</span>, json={
+    <span class="st">"answer"</span>:       <span class="st">"Based on the context, ..."</span>,
+    <span class="st">"confidence"</span>:   <span class="hl">0.85</span>,
+    <span class="st">"source_quote"</span>: <span class="st">"verbatim text from context"</span>,
+    <span class="st">"session_id"</span>:   session_id,
+}).json()
+
+<span class="fn">print</span>(result[<span class="st">"reward"</span>])            <span class="cm"># scalar in [0, 1]</span>
+<span class="fn">print</span>(result[<span class="st">"is_hallucination"</span>])   <span class="cm"># bool</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ─ PLAYGROUND ─ -->
+<div id="playground" class="panel">
+  <div class="section-head">
+    <h2>Interactive Playground</h2>
+    <p>Reset an episode, read the context, craft your answer, and see the live reward breakdown.</p>
+  </div>
+  <div class="pg-grid">
+
+    <!-- LEFT: Controls -->
+    <div>
+      <div class="card">
+        <div class="ep-progress">
+          <div class="ep-meta">
+            <span class="ep-step" id="ep-step-label">No episode active</span>
+            <span class="halluc-badge" id="halluc-badge"></span>
+          </div>
+          <div class="ep-bar-bg"><div class="ep-bar-fill" id="ep-bar" style="width:0%"></div></div>
+        </div>
+
+        <div class="input-group">
+          <label class="pg-label">Difficulty</label>
+          <select class="pg-select" id="difficulty">
+            <option value="beginner">🟢  Beginner — Factual Grounding</option>
+            <option value="intermediate">🔵  Intermediate — Multi-Hop Synthesis</option>
+            <option value="advanced">🔴  Advanced — Adversarial Resistance</option>
+          </select>
+        </div>
+
+        <div class="input-group">
+          <label class="pg-label">Question &amp; Context</label>
+          <div class="context-box" id="ctx-box">
+            <span class="empty-hint">Click Reset to load a question and context...</span>
+          </div>
+        </div>
+
+        <div class="input-group">
+          <label class="pg-label">Your Answer</label>
+          <textarea class="pg-textarea" id="answer" placeholder="Write an answer derived only from the context above..."></textarea>
+        </div>
+
+        <div class="input-group">
+          <label class="pg-label">Confidence</label>
+          <div class="slider-wrap">
+            <div class="slider-row">
+              <input type="range" min="0" max="1" step="0.05" value="0.7" id="confidence"
+                oninput="document.getElementById('conf-val').textContent=parseFloat(this.value).toFixed(2)">
+              <span class="slider-val" id="conf-val">0.70</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="input-group">
+          <label class="pg-label">Source Quote <span style="color:var(--border2);font-weight:400;text-transform:none;letter-spacing:0">(verbatim from context)</span></label>
+          <input class="pg-input" id="source_quote" type="text" placeholder="Paste a verbatim phrase from the context...">
+        </div>
+
+        <div class="btn-row">
+          <button class="btn btn-primary" onclick="doReset()">⟳ Reset</button>
+          <button class="btn btn-secondary" id="step-btn" onclick="doStep()" disabled>→ Step</button>
+        </div>
+      </div>
     </div>
 
-    <!-- Content -->
-    <div class="content">
-        <!-- Navigation -->
-        <nav>
-            <div class="logo">
-                <div class="logo-icon">🛡️</div>
-                <span class="logo-text">HallucinationGuard</span>
-            </div>
-            <div class="nav-links">
-                <a href="#overview" class="nav-link">Overview</a>
-                <a href="#tasks" class="nav-link">Tasks</a>
-                <a href="#playground" class="nav-link active">Playground</a>
-                <a href="#endpoints" class="nav-link">Endpoints</a>
-            </div>
-            <a href="/redoc" class="nav-btn">API Docs →</a>
-        </nav>
+    <!-- RIGHT: Results -->
+    <div>
+      <div class="card" id="reward-card">
+        <div class="reward-title">
+          <span>Reward Breakdown</span>
+          <span class="total-reward-val" id="total-reward">—</span>
+        </div>
+        <div class="reward-bars" id="reward-bars">
+          <!-- placeholder bars -->
+          <div style="text-align:center;padding:20px 0;color:var(--border2);font-size:13px;">
+            Submit an answer to see the 9-component reward breakdown
+          </div>
+        </div>
+        <div class="raw-toggle" onclick="toggleRaw()">
+          <span id="raw-arrow">▶</span> Raw JSON response
+        </div>
+        <div class="raw-box" id="raw-box"></div>
+      </div>
 
-        <!-- Hero Section -->
-        <section class="hero">
-            <div class="hero-badge">
-                <span class="badge-dot"></span>
-                <span>v4.2.0 • OpenEnv Compatible • Production Ready</span>
-            </div>
-            <h1>Train AI to Stop<br/><span>Hallucinating</span></h1>
-            <p class="hero-subtitle">The production-grade RL environment for training and evaluating LLMs on hallucination avoidance. Built on 1M+ real-world examples across 38 benchmark datasets.</p>
-            <div class="hero-buttons">
-                <a href="#playground" class="btn btn-primary">
-                    <span>⚡</span> Try Interactive Demo
-                </a>
-                <a href="/redoc" class="btn btn-secondary">
-                    <span>📖</span> Full API Reference
-                </a>
-            </div>
-            <div class="stats-container">
-                <div class="stat-item">
-                    <div class="stat-value" data-count="1090163">0</div>
-                    <div class="stat-label">Examples</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-value" data-count="38">0</div>
-                    <div class="stat-label">Datasets</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-value" data-count="9">0</div>
-                    <div class="stat-label">Reward Components</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-value" data-count="3">0</div>
-                    <div class="stat-label">Task Levels</div>
-                </div>
-            </div>
-        </section>
-
-        <!-- Features Section -->
-        <section class="section" id="overview">
-            <div class="section-header">
-                <h2 class="section-title">Why HallucinationGuard?</h2>
-                <p class="section-subtitle">Research-grade evaluation for grounded AI systems</p>
-            </div>
-            <div class="features-grid">
-                <div class="feature-item">
-                    <div class="feature-icon">🎯</div>
-                    <div class="feature-text">
-                        <h4>Factual Grounding</h4>
-                        <p>Rewards answers derived strictly from provided context</p>
-                    </div>
-                </div>
-                <div class="feature-item">
-                    <div class="feature-icon">🔬</div>
-                    <div class="feature-text">
-                        <h4>9-Component Reward</h4>
-                        <p>Factual correctness, grounding, calibration, NLI, BERTScore...</p>
-                    </div>
-                </div>
-                <div class="feature-item">
-                    <div class="feature-icon">📊</div>
-                    <div class="feature-text">
-                        <h4>Real-World Datasets</h4>
-                        <p>SQuAD, HotpotQA, HaluEval, TruthfulQA, FEVER, and 33 more</p>
-                    </div>
-                </div>
-                <div class="feature-item">
-                    <div class="feature-icon">⚡</div>
-                    <div class="feature-text">
-                        <h4>Fast API</h4>
-                        <p>RESTful endpoints with OpenEnv compliance</p>
-                    </div>
-                </div>
-                <div class="feature-item">
-                    <div class="feature-icon">🧠</div>
-                    <div class="feature-text">
-                        <h4>NLI-Powered</h4>
-                        <p>Detects entailment and contradiction semantically</p>
-                    </div>
-                </div>
-                <div class="feature-item">
-                    <div class="feature-icon">🏆</div>
-                    <div class="feature-text">
-                        <h4>Leaderboard</h4>
-                        <p>Compare model performance across tasks</p>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <!-- Tasks Section -->
-        <section class="section" id="tasks">
-            <div class="section-header">
-                <h2 class="section-title">Three Difficulty Levels</h2>
-                <p class="section-subtitle">Progressive curriculum from basic to adversarial</p>
-            </div>
-            <div class="cards-grid">
-                <div class="card">
-                    <div class="card-icon green">🟢</div>
-                    <h3 class="card-title">Task 1: Factual Grounding</h3>
-                    <p class="card-desc">Answer straightforward factual questions from a short context passage. Single-hop retrieval with unambiguous ground truth. Perfect for initial training.</p>
-                    <span class="card-badge badge-beginner">Beginner</span>
-                    <div style="margin-top: 16px; font-size: 12px; color: var(--text-muted);">Datasets: SQuAD, BoolQ, ARC, OpenBookQA</div>
-                </div>
-                <div class="card">
-                    <div class="card-icon yellow">🟡</div>
-                    <h3 class="card-title">Task 2: Multi-Hop Synthesis</h3>
-                    <p class="card-desc">Synthesize evidence from multiple sentences. Connect disparate facts without fabricating bridging information. Requires reasoning chains.</p>
-                    <span class="card-badge badge-intermediate">Intermediate</span>
-                    <div style="margin-top: 16px; font-size: 12px; color: var(--text-muted);">Datasets: HotpotQA, CoQA, NQ-Open, MS-MARCO</div>
-                </div>
-                <div class="card">
-                    <div class="card-icon red">🔴</div>
-                    <h3 class="card-title">Task 3: Adversarial Resistance</h3>
-                    <p class="card-desc">Resist adversarial prompts designed to elicit hallucinations. Many questions are unanswerable — confident refusals are rewarded.</p>
-                    <span class="card-badge badge-advanced">Advanced</span>
-                    <div style="margin-top: 16px; font-size: 12px; color: var(--text-muted);">Datasets: HaluEval, TruthfulQA, FEVER, AdversarialQA</div>
-                </div>
-            </div>
-        </section>
-
-        <!-- Playground Section -->
-        <section class="section" id="playground">
-            <div class="section-header">
-                <h2 class="section-title">Interactive Playground</h2>
-                <p class="section-subtitle">Test the API directly in your browser</p>
-            </div>
-            <div class="playground">
-                <div class="playground-header">
-                    <div class="playground-tab active" onclick="switchTab('reset')">🔄 Reset Episode</div>
-                    <div class="playground-tab" onclick="switchTab('step')">📝 Submit Answer</div>
-                    <div class="playground-tab" onclick="switchTab('batch')">📦 Batch Evaluate</div>
-                    <div class="playground-tab" onclick="switchTab('baseline')">🤖 Run Baseline</div>
-                </div>
-                <div class="playground-body">
-                    <div class="playground-left">
-                        <div class="playground-label">REQUEST BODY</div>
-                        <textarea id="request-body" class="playground-textarea" placeholder="Enter JSON request...">{
-  "difficulty": "beginner",
-  "seed": 42
-}</textarea>
-                        <div class="btn-group">
-                            <button class="btn btn-primary" onclick="sendRequest()">
-                                ▶ Send Request
-                            </button>
-                            <button class="btn btn-secondary" onclick="clearAll()">
-                                Clear
-                            </button>
-                        </div>
-                    </div>
-                    <div class="playground-right">
-                        <div class="playground-label">RESPONSE</div>
-                        <div id="result-box" class="result-box">
-<span style="color: var(--text-muted);">// Response will appear here...
-//
-// Click "Send Request" to test the API</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <!-- Endpoints Section -->
-        <section class="section" id="endpoints">
-            <div class="section-header">
-                <h2 class="section-title">All Endpoints</h2>
-                <p class="section-subtitle">Complete API reference at a glance</p>
-            </div>
-            <div class="endpoints-container">
-                <div class="endpoint-row">
-                    <span class="method-badge method-post">POST</span>
-                    <span class="endpoint-path">/reset</span>
-                    <span class="endpoint-desc">Start a new episode with optional difficulty and seed</span>
-                </div>
-                <div class="endpoint-row">
-                    <span class="method-badge method-post">POST</span>
-                    <span class="endpoint-path">/step</span>
-                    <span class="endpoint-desc">Submit an answer with confidence and source citation</span>
-                </div>
-                <div class="endpoint-row">
-                    <span class="method-badge method-get">GET</span>
-                    <span class="endpoint-path">/state</span>
-                    <span class="endpoint-desc">Get current episode state, accuracy, and skill rating</span>
-                </div>
-                <div class="endpoint-row">
-                    <span class="method-badge method-get">GET</span>
-                    <span class="endpoint-path">/tasks</span>
-                    <span class="endpoint-desc">List all 3 tasks with complete action schema</span>
-                </div>
-                <div class="endpoint-row">
-                    <span class="method-badge method-post">POST</span>
-                    <span class="endpoint-path">/grader</span>
-                    <span class="endpoint-desc">Score a completed episode (returns 0.0–1.0)</span>
-                </div>
-                <div class="endpoint-row">
-                    <span class="method-badge method-post">POST</span>
-                    <span class="endpoint-path">/baseline</span>
-                    <span class="endpoint-desc">Run built-in heuristic baseline agent</span>
-                </div>
-                <div class="endpoint-row">
-                    <span class="method-badge method-post">POST</span>
-                    <span class="endpoint-path">/batch/evaluate</span>
-                    <span class="endpoint-desc">Evaluate multiple Q&A pairs in one request</span>
-                </div>
-                <div class="endpoint-row">
-                    <span class="method-badge method-get">GET</span>
-                    <span class="endpoint-path">/leaderboard</span>
-                    <span class="endpoint-desc">View ranked model performance</span>
-                </div>
-                <div class="endpoint-row">
-                    <span class="method-badge method-get">GET</span>
-                    <span class="endpoint-path">/health</span>
-                    <span class="endpoint-desc">Service health check</span>
-                </div>
-                <div class="endpoint-row">
-                    <span class="method-badge method-get">GET</span>
-                    <span class="endpoint-path">/datasets</span>
-                    <span class="endpoint-desc">Dataset statistics and distribution</span>
-                </div>
-            </div>
-        </section>
-
-        <!-- Footer -->
-        <footer>
-            <p class="footer-text">HallucinationGuard-Env — OpenEnv RL Environment for Hallucination Detection</p>
-            <div class="footer-links">
-                <a href="https://huggingface.co/spaces/SamSankar/hallucination-guard-env" class="footer-link">🤗 HuggingFace Space</a>
-                <a href="https://pypi.org/project/openenv-halluguard/" class="footer-link">📦 PyPI Package</a>
-                <a href="/redoc" class="footer-link">📖 API Reference</a>
-                <a href="https://github.com/meta-pytorch/OpenEnv" class="footer-link">🔗 OpenEnv</a>
-            </div>
-        </footer>
+      <div class="card">
+        <div class="reward-title" style="margin-bottom:14px">
+          <span>Observation</span>
+          <span style="display:flex;align-items:center;gap:6px">
+            <span class="status-dot" id="status-dot"></span>
+            <span id="status-text" style="font-size:11px;color:var(--muted);font-weight:500"></span>
+          </span>
+        </div>
+        <div class="raw-box open" id="obs-box" style="max-height:220px">Click Reset to start an episode.</div>
+      </div>
     </div>
 
-    <script>
-        // ═══════════════════════════════════════════════════════════════════════════════
-        // THREE.JS 3D BACKGROUND
-        // ═══════════════════════════════════════════════════════════════════════════════
+  </div>
+</div>
 
-        const canvas = document.getElementById('bg-canvas');
-        const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+</main>
 
-        const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        camera.position.z = 30;
+<!-- ══ FOOTER ══ -->
+<footer style="text-align:center;padding:32px 40px 24px;border-top:1px solid var(--border);color:var(--muted);font-size:12px;">
+  HallucinationGuard-Env v4.2.0 &middot; OpenEnv &middot; <a href="/swagger" style="color:var(--amber);text-decoration:none">Swagger Docs</a> &middot; <a href="/redoc" style="color:var(--amber);text-decoration:none">ReDoc</a>
+</footer>
 
-        // Particle system
-        const particlesGeometry = new THREE.BufferGeometry();
-        const particlesCount = 2000;
-        const posArray = new Float32Array(particlesCount * 3);
+<script>
+let sessionId = null;
+let stepCount = 0;
+const MAX_STEPS = 10;
 
-        for(let i = 0; i < particlesCount * 3; i++) {
-            posArray[i] = (Math.random() - 0.5) * 100;
-        }
+const REWARD_KEYS = [
+  {key:'correctness',           label:'Factual Correctness',  css:'rc-0'},
+  {key:'grounding',             label:'Source Grounding',     css:'rc-1'},
+  {key:'citation',              label:'Citation Accuracy',    css:'rc-2'},
+  {key:'calibration',          label:'Confidence Calibr.',   css:'rc-3'},
+  {key:'consistency',           label:'Semantic Consistency', css:'rc-4'},
+  {key:'halluc_detect',        label:'Hallucination Detect.', css:'rc-5'},
+  {key:'rouge_l',               label:'ROUGE-L',             css:'rc-6'},
+  {key:'bert_score',            label:'BERTScore',            css:'rc-7'},
+  {key:'align_score',           label:'AlignScore',           css:'rc-8'},
+  // Also accept alternate key names from the grader
+  {key:'factual_correctness',   label:'Factual Correctness',  css:'rc-0'},
+  {key:'source_grounding',      label:'Source Grounding',     css:'rc-1'},
+  {key:'citation_accuracy',     label:'Citation Accuracy',    css:'rc-2'},
+  {key:'confidence_calibration', label:'Confidence Calibr.',   css:'rc-3'},
+  {key:'semantic_consistency',  label:'Semantic Consistency', css:'rc-4'},
+  {key:'hallucination_penalty', label:'Hallucination Detect.', css:'rc-5'},
+  {key:'rouge_score',           label:'ROUGE-L',              css:'rc-6'},
+  {key:'bertscore',             label:'BERTScore',            css:'rc-7'},
+  {key:'alignscore',            label:'AlignScore',           css:'rc-8'},
+];
 
-        particlesGeometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+function showTab(id, el) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById(id).classList.add('active');
+  if (id === 'playground') {
+    document.getElementById('playground').scrollIntoView({behavior:'smooth', block:'start'});
+  }
+}
 
-        const particlesMaterial = new THREE.PointsMaterial({
-            size: 0.1,
-            color: 0x7c3aed,
-            transparent: true,
-            opacity: 0.6,
-            blending: THREE.AdditiveBlending
-        });
+function setStatus(state) {
+  const dot = document.getElementById('status-dot');
+  const txt = document.getElementById('status-text');
+  dot.className = 'status-dot ' + state;
+  txt.textContent = state === 'ready' ? 'Ready' : state === 'done' ? 'Episode done' : '';
+}
 
-        const particlesMesh = new THREE.Points(particlesGeometry, particlesMaterial);
-        scene.add(particlesMesh);
+function updateProgress() {
+  const pct = sessionId ? (stepCount / MAX_STEPS) * 100 : 0;
+  document.getElementById('ep-bar').style.width = pct + '%';
+  document.getElementById('ep-step-label').textContent = sessionId
+    ? `Step ${stepCount} / ${MAX_STEPS}`
+    : 'No episode active';
+}
 
-        // Floating geometric objects
-        const geometries = [
-            new THREE.IcosahedronGeometry(2, 0),
-            new THREE.OctahedronGeometry(2, 0),
-            new THREE.TetrahedronGeometry(2, 0),
-            new THREE.TorusGeometry(1.5, 0.5, 8, 16),
-        ];
+function renderContext(question, context) {
+  const box = document.getElementById('ctx-box');
+  box.innerHTML = `<div style="margin-bottom:10px"><span style="font-size:10px;font-weight:700;letter-spacing:1px;color:var(--amber);text-transform:uppercase">Question</span><br><span class="q-highlight">${escHtml(question)}</span></div><div><span style="font-size:10px;font-weight:700;letter-spacing:1px;color:var(--muted);text-transform:uppercase">Context</span><br><span style="font-size:12px;color:var(--muted)">${escHtml(context)}</span></div>`;
+}
 
-        const objects = [];
-        const colors = [0x7c3aed, 0x06b6d4, 0xf43f5e, 0x10b981];
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
 
-        geometries.forEach((geo, i) => {
-            const material = new THREE.MeshBasicMaterial({
-                color: colors[i],
-                wireframe: true,
-                transparent: true,
-                opacity: 0.3
-            });
-            const mesh = new THREE.Mesh(geo, material);
-            mesh.position.set(
-                (Math.random() - 0.5) * 40,
-                (Math.random() - 0.5) * 40,
-                (Math.random() - 0.5) * 20 - 10
-            );
-            mesh.userData = {
-                rotationSpeed: { x: Math.random() * 0.01, y: Math.random() * 0.01 },
-                floatSpeed: Math.random() * 0.02 + 0.01,
-                floatOffset: Math.random() * Math.PI * 2
-            };
-            objects.push(mesh);
-            scene.add(mesh);
-        });
+function renderRewards(data) {
+  const container = document.getElementById('reward-bars');
+  const reward = data.reward != null ? data.reward : data.total_reward;
+  const totalEl = document.getElementById('total-reward');
+  if (reward != null) {
+    const r = parseFloat(reward);
+    totalEl.textContent = (r >= 0 ? '+' : '') + r.toFixed(3);
+    totalEl.style.color = r >= 0 ? 'var(--teal)' : 'var(--red)';
+  }
 
-        // Mouse movement effect
-        let mouseX = 0, mouseY = 0;
-        document.addEventListener('mousemove', (e) => {
-            mouseX = (e.clientX / window.innerWidth) * 2 - 1;
-            mouseY = -(e.clientY / window.innerHeight) * 2 + 1;
-        });
+  const info = data.info || data.reward_breakdown || data.breakdown || data.metadata || {};
+  let html = '';
+  let foundAny = false;
+  const seen = new Set();
+  REWARD_KEYS.forEach(({key, label, css}) => {
+    if (seen.has(label)) return;
+    let v = info[key] != null ? info[key] : (data[key] != null ? data[key] : null);
+    if (v == null) return;
+    seen.add(label);
+    foundAny = true;
+    const pct = Math.min(100, Math.max(0, Math.round(Math.abs(parseFloat(v)) * 100)));
+    const display = parseFloat(v).toFixed(3);
+    html += `<div class="reward-bar-row">
+      <span class="rb-label">${label}</span>
+      <div class="rb-track"><div class="rb-fill ${css}" style="width:${pct}%"></div></div>
+      <span class="rb-val">${display}</span>
+    </div>`;
+  });
 
-        // Animation loop
-        let time = 0;
-        function animate() {
-            requestAnimationFrame(animate);
-            time += 0.01;
+  if (!foundAny && reward != null) {
+    const pct = Math.min(100, Math.max(0, Math.round(parseFloat(reward)*100)));
+    html = `<div class="reward-bar-row">
+      <span class="rb-label">total_reward</span>
+      <div class="rb-track"><div class="rb-fill rc-0" style="width:${pct}%"></div></div>
+      <span class="rb-val">${parseFloat(reward).toFixed(3)}</span>
+    </div>`;
+  }
 
-            particlesMesh.rotation.y += 0.001;
-            particlesMesh.rotation.x += 0.0005;
+  container.innerHTML = html || '<div style="color:var(--border2);font-size:12px;text-align:center;padding:12px">No breakdown data in response</div>';
 
-            // Camera follows mouse slightly
-            camera.position.x += (mouseX * 3 - camera.position.x) * 0.02;
-            camera.position.y += (mouseY * 3 - camera.position.y) * 0.02;
-            camera.lookAt(scene.position);
+  // hallucination badge
+  const badge = document.getElementById('halluc-badge');
+  if (data.is_hallucination != null) {
+    badge.className = 'halluc-badge show ' + (data.is_hallucination ? 'yes' : 'no');
+    badge.textContent = data.is_hallucination ? '⚠ Hallucination' : '✓ Grounded';
+  }
+}
 
-            // Animate floating objects
-            objects.forEach((obj, i) => {
-                obj.rotation.x += obj.userData.rotationSpeed.x;
-                obj.rotation.y += obj.userData.rotationSpeed.y;
-                obj.position.y += Math.sin(time + obj.userData.floatOffset) * 0.02;
-            });
+async function doReset() {
+  const diff = document.getElementById('difficulty').value;
+  const resetBtn = document.querySelector('.btn-primary');
+  resetBtn.disabled = true; resetBtn.textContent = 'Loading...';
+  document.getElementById('ctx-box').innerHTML = '<span class="empty-hint">Loading...</span>';
+  document.getElementById('obs-box').textContent = 'Loading...';
+  document.getElementById('step-btn').disabled = true;
+  setStatus('');
+  try {
+    const r = await fetch('/reset', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({difficulty: diff, seed: Math.floor(Math.random()*9999)})
+    });
+    const data = await r.json();
+    sessionId = data.session_id || null;
+    stepCount = 0;
+    updateProgress();
+    renderContext(data.question || '(no question)', data.context || '(no context)');
+    document.getElementById('obs-box').textContent = JSON.stringify(data, null, 2);
+    document.getElementById('step-btn').disabled = false;
+    document.getElementById('reward-bars').innerHTML = '<div style="text-align:center;padding:20px 0;color:var(--border2);font-size:13px;">Submit an answer to see the 9-component reward breakdown</div>';
+    document.getElementById('total-reward').textContent = '—';
+    document.getElementById('total-reward').style.color = 'var(--amber)';
+    document.getElementById('halluc-badge').className = 'halluc-badge';
+    setStatus('ready');
+  } catch(e) {
+    document.getElementById('ctx-box').innerHTML = '<span style="color:var(--red)">Error: ' + escHtml(e.message) + '</span>';
+    setStatus('');
+  } finally {
+    resetBtn.disabled = false; resetBtn.textContent = '⟳ Reset';
+  }
+}
 
-            renderer.render(scene, camera);
-        }
-        animate();
-
-        // Resize handler
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        });
-
-        // ═══════════════════════════════════════════════════════════════════════════════
-        // PLAYGROUND FUNCTIONALITY
-        // ═══════════════════════════════════════════════════════════════════════════════
-
-        let currentTab = 'reset';
-        const endpoints = {
-            reset: '/reset',
-            step: '/step',
-            batch: '/batch/evaluate',
-            baseline: '/baseline'
-        };
-
-        const placeholders = {
-            reset: `{
-  "difficulty": "beginner",
-  "seed": 42
-}`,
-            step: `{
-  "answer": "Your answer derived from context",
-  "confidence": 0.85,
-  "source_quote": "Exact quote from context"
-}`,
-            batch: `{
-  "items": [
-    {
-      "question": "What is the capital of France?",
-      "context": "The capital of France is Paris.",
-      "answer": "Paris",
-      "confidence": 0.9,
-      "ground_truth": "Paris"
+async function doStep() {
+  if (!sessionId) { alert('Reset first!'); return; }
+  const stepBtn = document.getElementById('step-btn');
+  const body = {
+    answer: document.getElementById('answer').value,
+    confidence: parseFloat(document.getElementById('confidence').value) || 0.5,
+    source_quote: document.getElementById('source_quote').value,
+    session_id: sessionId,
+  };
+  stepBtn.disabled = true; stepBtn.textContent = 'Submitting...';
+  try {
+    const r = await fetch('/step', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(body)
+    });
+    const data = await r.json();
+    stepCount++;
+    updateProgress();
+    renderRewards(data);
+    document.getElementById('raw-box').textContent = JSON.stringify(data, null, 2);
+    if (data.done) {
+      sessionId = null;
+      stepBtn.textContent = '→ Step';
+      document.getElementById('ctx-box').innerHTML = '<span class="empty-hint">Episode complete. Click Reset for a new episode.</span>';
+      setStatus('done');
+    } else {
+      stepBtn.disabled = false; stepBtn.textContent = '→ Step';
+      setStatus('ready');
+      if (data.question) renderContext(data.question, data.context || '');
     }
-  ],
-  "task_id": "task_1_factual_grounding"
-}`,
-            baseline: `{
-  "steps_per_task": 5,
-  "seed": 42
-}`
-        };
+  } catch(e) {
+    document.getElementById('raw-box').textContent = 'Error: ' + e.message;
+    stepBtn.disabled = false; stepBtn.textContent = '→ Step';
+    setStatus('');
+  }
+}
 
-        function switchTab(tab) {
-            currentTab = tab;
-            document.querySelectorAll('.playground-tab').forEach(t => {
-                t.classList.toggle('active', t.textContent.toLowerCase().includes(tab));
-            });
-            document.getElementById('request-body').value = placeholders[tab];
-            document.getElementById('result-box').innerHTML = '<span style="color: var(--text-muted);">// Response will appear here...</span>';
-            document.getElementById('result-box').className = 'result-box';
-        }
+function toggleRaw() {
+  const box = document.getElementById('raw-box');
+  const arr = document.getElementById('raw-arrow');
+  box.classList.toggle('open');
+  arr.textContent = box.classList.contains('open') ? '▼' : '▶';
+}
 
-        async function sendRequest() {
-            const body = document.getElementById('request-body').value;
-            const resultBox = document.getElementById('result-box');
-
-            try {
-                resultBox.innerHTML = '<span style="color: var(--accent-2);">⏳ Sending request...</span>';
-
-                const response = await fetch(endpoints[currentTab], {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: body
-                });
-
-                const data = await response.json();
-                resultBox.className = 'result-box success';
-                resultBox.textContent = JSON.stringify(data, null, 2);
-            } catch (error) {
-                resultBox.className = 'result-box error';
-                resultBox.textContent = 'Error: ' + error.message;
-            }
-        }
-
-        function clearAll() {
-            document.getElementById('request-body').value = placeholders[currentTab];
-            document.getElementById('result-box').innerHTML = '<span style="color: var(--text-muted);">// Response will appear here...</span>';
-            document.getElementById('result-box').className = 'result-box';
-        }
-
-        // ════════════════════���══════════════════════════════════════════════════════════
-        // ANIMATED COUNTERS
-        // ═══════════════════════════════════════════════════════════════════════════════
-
-        function animateCounters() {
-            const counters = document.querySelectorAll('.stat-value[data-count]');
-            counters.forEach(counter => {
-                const target = parseInt(counter.getAttribute('data-count'));
-                const duration = 2000;
-                const start = performance.now();
-
-                function update(currentTime) {
-                    const elapsed = currentTime - start;
-                    const progress = Math.min(elapsed / duration, 1);
-                    const easeOut = 1 - Math.pow(1 - progress, 3);
-                    const current = Math.floor(easeOut * target);
-
-                    counter.textContent = current.toLocaleString();
-
-                    if (progress < 1) {
-                        requestAnimationFrame(update);
-                    } else {
-                        counter.textContent = target >= 1000000 ? '1M+' : target.toLocaleString();
-                    }
-                }
-
-                requestAnimationFrame(update);
-            });
-        }
-
-        // Intersection Observer for counter animation
-        const statsObserver = new IntersectionObserver((entries) => {
-            entries.forEach(entry => {
-                if (entry.isIntersecting) {
-                    animateCounters();
-                    statsObserver.disconnect();
-                }
-            });
-        }, { threshold: 0.5 });
-
-        const statsContainer = document.querySelector('.stats-container');
-        if (statsContainer) {
-            statsObserver.observe(statsContainer);
-        }
-
-        // Smooth scroll for navigation
-        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
-            anchor.addEventListener('click', function(e) {
-                e.preventDefault();
-                const target = document.querySelector(this.getAttribute('href'));
-                if (target) {
-                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                }
-            });
-        });
-    </script>
+function copyCode(btn, id) {
+  const text = document.getElementById(id).textContent;
+  const doCopy = (txt) => {
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(txt);
+    }
+    const ta = document.createElement('textarea');
+    ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
+    return Promise.resolve();
+  };
+  doCopy(text).then(() => {
+    btn.textContent = 'Copied!';
+    setTimeout(() => btn.textContent = 'Copy', 1800);
+  }).catch(() => {
+    btn.textContent = 'Failed'; setTimeout(() => btn.textContent = 'Copy', 1800);
+  });
+}
+</script>
 </body>
-</html>
-"""
+</html>"""
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# FASTAPI APP
+# FASTAPI APP — session-isolated environments for thread safety
 # ═══════════════════════════════════════════════════════════════════════════════
 
 _default_env: Optional[HallucinationEnvironment] = None
@@ -1406,6 +1045,7 @@ _env_loading = False
 _env_lock = threading.Lock()
 
 def _get_default_env() -> HallucinationEnvironment:
+    """Get or create the shared dataset-loader environment (used only for dataset access)."""
     global _default_env, _env_loading
     if _default_env is not None:
         return _default_env
@@ -1414,13 +1054,12 @@ def _get_default_env() -> HallucinationEnvironment:
             return _default_env
         _env_loading = True
         try:
-            logger.info("Creating HallucinationEnvironment...")
+            logger.info("Creating HallucinationEnvironment (dataset loader)...")
             _default_env = HallucinationEnvironment()
             logger.info(f"Environment ready — {_default_env.dataset_loader.get_total_examples():,} examples loaded.")
             return _default_env
         except Exception as e:
             logger.error(f"Failed to create environment: {e}")
-            # Minimal fallback environment
             from dataset_loader import DatasetLoader
             class MinimalEnv:
                 def __init__(self):
@@ -1437,6 +1076,37 @@ def _get_default_env() -> HallucinationEnvironment:
         finally:
             _env_loading = False
 
+
+def _create_session_env(session_id: str) -> HallucinationEnvironment:
+    """Create a fresh per-session environment that shares the dataset loader
+    (expensive to load) but has its own episode state (safe for concurrent use)."""
+    loader_env = _get_default_env()
+    # Pass the shared loader directly into __init__ so we skip the expensive
+    # DatasetLoader() construction and dataset loading that would otherwise
+    # happen inside HallucinationEnvironment.__init__
+    env = HallucinationEnvironment(session_id=session_id, dataset_loader=loader_env.dataset_loader)
+    return env
+
+
+_sessions: Dict[str, HallucinationEnvironment] = {}
+_session_lock = threading.Lock()
+
+
+def _get_session(session_id: str) -> Optional[HallucinationEnvironment]:
+    """Retrieve an existing session environment."""
+    with _session_lock:
+        return _sessions.get(session_id)
+
+
+def _cleanup_session(session_id: str):
+    """Remove and clean up a session environment."""
+    with _session_lock:
+        env = _sessions.pop(session_id, None)
+    if env:
+        try: env.close()
+        except: pass
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _default_env
@@ -1444,14 +1114,16 @@ async def lifespan(app: FastAPI):
     def preload_models():
         try:
             logger.info("Preloading ML models...")
+            import transformers
+            transformers.logging.set_verbosity_error()
             from sentence_transformers import SentenceTransformer, CrossEncoder
             SentenceTransformer('all-MiniLM-L6-v2')
             CrossEncoder('cross-encoder/nli-deberta-v3-small')
             from rouge_score import rouge_scorer
             rouge_scorer.RougeScorer(["rouge1", "rouge2", "rougeL"], use_stemmer=True)
             try:
-                from bert_score import BERTScorer
-                BERTScorer(model_type='microsoft/deberta-v3-base', lang='en', device='cpu')
+                from grader import _get_bert_scorer
+                _get_bert_scorer()
             except: pass
             logger.info("All ML models preloaded!")
         except Exception as e:
@@ -1483,19 +1155,24 @@ app = FastAPI(
 
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-_sessions: Dict[str, HallucinationEnvironment] = {}
 import json as _json
 _LEADERBOARD_FILE = "/tmp/hallucination_guard_leaderboard.json"
 
 def _load_leaderboard():
     if os.path.exists(_LEADERBOARD_FILE):
-        try: return _json.load(open(_LEADERBOARD_FILE))
-        except: pass
+        try:
+            with open(_LEADERBOARD_FILE, "r", encoding="utf-8") as f:
+                return _json.load(f)
+        except Exception:
+            pass
     return {}
 
 def _save_leaderboard(lb):
-    try: _json.dump(lb, open(_LEADERBOARD_FILE, "w"), indent=2)
-    except: pass
+    try:
+        with open(_LEADERBOARD_FILE, "w", encoding="utf-8") as f:
+            _json.dump(lb, f, indent=2)
+    except Exception:
+        pass
 
 _leaderboard: Dict[str, Dict[str, Any]] = _load_leaderboard()
 
@@ -1516,15 +1193,29 @@ def _safe_dict(obj):
 @app.get("/", include_in_schema=False, response_class=HTMLResponse)
 async def root(): return STUNNING_DOCS_HTML
 
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    # SVG favicon served as data-uri in the HTML; return 204 so browsers stop logging 404s
+    return Response(status_code=204)
+
 @app.get("/docs", include_in_schema=False, response_class=HTMLResponse)
 async def docs(): return STUNNING_DOCS_HTML
 
 @app.post("/reset", tags=["Environment"])
 async def reset(body: Dict[str, Any] = {}):
     try:
-        env = _get_default_env()
+        # Create a per-session environment for thread safety
+        session_id = body.get("session_id") or f"ses_{uuid.uuid4().hex[:8]}"
+        env = _create_session_env(session_id)
         obs = env.reset(**{k: v for k, v in body.items() if k in ("seed", "episode_id", "difficulty")})
-        return JSONResponse(content=_safe_dict(obs))
+        # Store the episode_id -> session mapping so /step can find this env
+        episode_id = getattr(obs, 'episode_id', None) or body.get("episode_id") or session_id
+        with _session_lock:
+            _sessions[episode_id] = env
+            _sessions[session_id] = env
+        result = _safe_dict(obs)
+        result["session_id"] = session_id
+        return JSONResponse(content=result)
     except Exception as e:
         import traceback
         logger.error(f"Reset error: {e}\n{traceback.format_exc()}")
@@ -1533,17 +1224,29 @@ async def reset(body: Dict[str, Any] = {}):
 @app.post("/step", tags=["Environment"])
 async def step(action_data: Dict[str, Any]):
     try:
-        env = _get_default_env()
+        # Look up session by episode_id or session_id for thread safety
+        session_id = action_data.pop("session_id", None) or action_data.pop("episode_id", None)
+        env = _get_session(session_id) if session_id else None
+        if env is None:
+            # Fallback: use default env (single-user mode)
+            env = _get_default_env()
         valid = set(HallucinationAction.model_fields.keys()) if hasattr(HallucinationAction, 'model_fields') else set(HallucinationAction.__fields__.keys())
         action = HallucinationAction(**{k: v for k, v in action_data.items() if k in valid})
-        return JSONResponse(content=_safe_dict(env.step(action)))
+        result = _safe_dict(env.step(action))
+        # If episode is done, clean up session
+        if result.get("done", False) and session_id:
+            _cleanup_session(session_id)
+        return JSONResponse(content=result)
     except Exception as e:
+        import traceback
+        logger.error(f"Step error: {e}\n{traceback.format_exc()}")
         raise HTTPException(500, str(e))
 
 @app.get("/state", tags=["Environment"])
-async def get_state():
+async def get_state(session_id: Optional[str] = None):
     try:
-        return JSONResponse(content=_safe_dict(_get_default_env().state()))
+        env = _get_session(session_id) if session_id else _get_default_env()
+        return JSONResponse(content=_safe_dict(env.state()))
     except Exception as e:
         raise HTTPException(500, str(e))
 
@@ -1571,19 +1274,42 @@ async def run_baseline(body: Dict[str, Any] = {}):
         task = get_task(task_id)
         if not task: continue
         sid = f"bl_{task_id}_{seed}"
-        if sid in _sessions: _sessions[sid].close()
-        _sessions[sid] = HallucinationEnvironment(session_id=sid)
-        obs = _safe_dict(_sessions[sid].reset(seed=seed, difficulty=diff))
+        # Use session-based env with shared dataset loader
+        env = _create_session_env(sid)
+        obs_dict = _safe_dict(env.reset(seed=seed, difficulty=diff))
         rewards, infos = [], []
         for _ in range(steps):
-            if obs.get("done"): break
-            ctx = obs.get("context", "")
+            if obs_dict.get("done"): break
+            ctx = obs_dict.get("context", "")
             action = HallucinationAction(answer=ctx[:100], confidence=0.6, source_quote=ctx[:80])
-            obs = _safe_dict(_sessions[sid].step(action))
-            rewards.append(float(obs.get("reward") or 0))
-            infos.append({"correctness": obs.get("grounding_score", 0), "is_hallucination": obs.get("is_hallucination", False)})
+            obs_dict = _safe_dict(env.step(action))
+            rewards.append(float(obs_dict.get("reward") or 0))
+            obs_meta = obs_dict.get("metadata", {})
+            if isinstance(obs_meta, dict):
+                obs_correctness = obs_meta.get("correctness", 0.0)
+                obs_calibration = obs_meta.get("calibration", 0.6)
+                rb = obs_meta.get("reward_breakdown", {})
+                infos.append({
+                    "correctness": obs_correctness,
+                    "grounding": obs_dict.get("grounding_score", 0),
+                    "calibration": obs_calibration,
+                    "hallucination_score": 1.0 if obs_dict.get("is_hallucination") else 0.0,
+                    "is_hallucination": bool(obs_dict.get("is_hallucination", False)),
+                    "semantic_consistency": rb.get("semantic_consistency", 0.0),
+                    "rouge_l": rb.get("rouge_l", 0.0),
+                    "bert_score": rb.get("bert_score", 0.0),
+                    "align_score": rb.get("align_score", 0.0),
+                })
+            else:
+                infos.append({
+                    "correctness": 0.0,
+                    "grounding": obs_dict.get("grounding_score", 0),
+                    "calibration": 0.6,
+                    "hallucination_score": 1.0 if obs_dict.get("is_hallucination") else 0.0,
+                    "is_hallucination": bool(obs_dict.get("is_hallucination", False)),
+                })
         results.append(compute_task_score(task, rewards, infos))
-        try: _sessions[sid].close(); del _sessions[sid]
+        try: env.close()
         except: pass
     return {"tasks": results, "summary": {"overall_score": round(sum(r["score"] for r in results)/max(len(results),1), 4)}}
 
@@ -1617,10 +1343,61 @@ async def submit_leaderboard(data: Dict[str, Any]):
 async def health(): return {"status": "healthy", "version": "4.2.0"}
 
 @app.get("/metadata", tags=["OpenEnv"])
-async def metadata(): return {"name": "hallucination-guard-env", "version": "4.2.0", "license": "MIT"}
+async def metadata():
+    return {
+        "name": "hallucination-guard-env",
+        "version": "4.2.0",
+        "license": "MIT",
+        "description": (
+            "An OpenEnv RL environment that trains AI models to answer questions "
+            "ONLY from verified context documents — penalizing hallucination and "
+            "rewarding factual grounding."
+        ),
+    }
 
 @app.get("/schema", tags=["OpenEnv"])
-async def schema(): return {"action": {"type": "object", "required": ["answer"]}, "observation": {"type": "object"}}
+async def schema():
+    return {
+        "action": {
+            "type": "object",
+            "required": ["answer"],
+            "properties": {
+                "answer":       {"type": "string",  "description": "Answer derived ONLY from the provided context document."},
+                "confidence":   {"type": "number",  "minimum": 0.0, "maximum": 1.0, "default": 0.5},
+                "source_quote": {"type": "string",  "default": ""},
+                "reasoning":    {"type": "string",  "default": ""},
+            },
+        },
+        "observation": {
+            "type": "object",
+            "properties": {
+                "question":           {"type": "string"},
+                "context":            {"type": "string"},
+                "ground_truth":       {"type": "string"},
+                "done":               {"type": "boolean"},
+                "reward":             {"type": "number"},
+                "feedback":           {"type": "string"},
+                "is_hallucination":   {"type": "boolean"},
+                "grounding_score":    {"type": "number"},
+                "difficulty_level":   {"type": "string"},
+                "attempts_remaining": {"type": "integer"},
+            },
+        },
+        "state": {
+            "type": "object",
+            "properties": {
+                "episode_id":            {"type": "string"},
+                "step_count":            {"type": "integer"},
+                "accuracy":              {"type": "number"},
+                "hallucination_rate":    {"type": "number"},
+                "average_reward":        {"type": "number"},
+                "current_difficulty":    {"type": "string"},
+                "skill_rating":          {"type": "number"},
+                "current_streak":        {"type": "integer"},
+                "best_streak":           {"type": "integer"},
+            },
+        },
+    }
 
 @app.get("/datasets", tags=["Info"])
 async def datasets():
