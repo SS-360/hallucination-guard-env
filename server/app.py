@@ -573,7 +573,7 @@ input[type=range] {
 
   <div class="card">
     <h3>9-Component Reward System</h3>
-    <p>Every answer is graded on <strong>factual correctness</strong>, <strong>source grounding</strong>, <strong>citation accuracy</strong>, <strong>confidence calibration</strong>, <strong>semantic consistency</strong>, <strong>hallucination detection</strong>, <strong>ROUGE-L</strong>, <strong>BERTScore</strong>, and <strong>AlignScore</strong>. Each component is weighted and combined into a single scalar reward in <strong>[−1, +1]</strong>. Confident wrong answers are penalized harder than uncertain ones.</p>
+    <p>Every answer is graded on <strong>factual correctness</strong>, <strong>source grounding</strong>, <strong>citation accuracy</strong>, <strong>confidence calibration</strong>, <strong>semantic consistency</strong>, <strong>hallucination detection</strong>, <strong>ROUGE-L</strong>, <strong>BERTScore</strong>, and <strong>AlignScore</strong>. Each component is weighted and combined into a single scalar reward in <strong>[0, 1]</strong>. Confident wrong answers are penalized harder than uncertain ones.</p>
   </div>
   <div class="card">
     <h3>Curriculum Progression</h3>
@@ -714,7 +714,7 @@ result = requests.<span class="fn">post</span>(<span class="st">f"{BASE}/step"</
     <span class="st">"session_id"</span>:   session_id,
 }).json()
 
-<span class="fn">print</span>(result[<span class="st">"reward"</span>])            <span class="cm"># scalar in [-1, +1]</span>
+<span class="fn">print</span>(result[<span class="st">"reward"</span>])            <span class="cm"># scalar in [0, 1]</span>
 <span class="fn">print</span>(result[<span class="st">"is_hallucination"</span>])   <span class="cm"># bool</span></div>
     </div>
   </div>
@@ -915,7 +915,7 @@ function renderRewards(data) {
   });
 
   if (!foundAny && reward != null) {
-    const pct = Math.min(100, Math.max(0, Math.round((parseFloat(reward)+1)/2*100)));
+    const pct = Math.min(100, Math.max(0, Math.round(parseFloat(reward)*100)));
     html = `<div class="reward-bar-row">
       <span class="rb-label">total_reward</span>
       <div class="rb-track"><div class="rb-fill rc-0" style="width:${pct}%"></div></div>
