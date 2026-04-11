@@ -259,9 +259,10 @@ def _create_session_env(session_id: str) -> HallucinationEnvironment:
     """Create a fresh per-session environment that shares the dataset loader
     (expensive to load) but has its own episode state (safe for concurrent use)."""
     loader_env = _get_default_env()
-    env = HallucinationEnvironment(session_id=session_id)
-    # Share the already-loaded dataset loader to avoid reloading 1M+ examples
-    env.dataset_loader = loader_env.dataset_loader
+    # Pass the shared loader directly into __init__ so we skip the expensive
+    # DatasetLoader() construction and dataset loading that would otherwise
+    # happen inside HallucinationEnvironment.__init__
+    env = HallucinationEnvironment(session_id=session_id, dataset_loader=loader_env.dataset_loader)
     return env
 
 
@@ -297,8 +298,8 @@ async def lifespan(app: FastAPI):
             from rouge_score import rouge_scorer
             rouge_scorer.RougeScorer(["rouge1", "rouge2", "rougeL"], use_stemmer=True)
             try:
-                from bert_score import BERTScorer
-                BERTScorer(model_type='roberta-base', lang='en', device='cpu')
+                from grader import _get_bert_scorer
+                _get_bert_scorer()
             except: pass
             logger.info("All ML models preloaded!")
         except Exception as e:
