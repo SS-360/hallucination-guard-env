@@ -2,17 +2,11 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project Overview
-
-HallucinationGuard-Env is an OpenEnv RL environment for training LLMs to avoid hallucinations. It runs as a FastAPI server on HuggingFace Spaces with 3 graded tasks (beginner → advanced) and a 9-component reward system.
-
 ## Key Commands
 
 ```bash
-# Install dependencies (root requirements.txt for pip install -e .)
+# Install (editable, includes ML deps)
 pip install -e .
-# Or for full ML dependencies (Docker/production):
-pip install -r server/requirements.txt
 
 # Run server locally (port 7860)
 uvicorn server.app:app --host 0.0.0.0 --port 7860 --reload
@@ -20,151 +14,121 @@ uvicorn server.app:app --host 0.0.0.0 --port 7860 --reload
 # Run heuristic baseline (no API key needed)
 python inference.py --heuristic --env-url http://localhost:7860
 
-# Run tests
-pytest tests/                           # All tests
-pytest tests/test_grader.py -v         # Specific test file
-pytest tests/test_grader.py::TestGraderScoreRange -v  # Specific test class
+# Run with LLM (Groq/Ollama/OpenAI-compatible)
+export API_BASE_URL=https://api.groq.com/openai/v1
+export MODEL_NAME=llama-3.3-70b-versatile
+export HF_TOKEN=your_key
+python inference.py --env-url http://localhost:7860 --episodes 3 --steps 5
 
-# Lint (CI uses this)
+# Run tests
+pytest tests/ -v
+pytest tests/test_grader.py::TestRewardRange -v          # Specific class
+pytest tests/test_grader.py::TestRewardRange::test_reward_in_range_correct_answer -v  # Single test
+
+# Validate OpenEnv compliance
+openenv validate                          # Local structure check
+openenv validate --url http://localhost:7860  # Runtime check against live server
+
+# Lint
 ruff check . --ignore E501,F401,F403
 
-# Docker build
+# Docker
 docker build -t hallucination-guard-env .
 docker run -p 7860:7860 hallucination-guard-env
 ```
 
-## Running with LLM APIs
-
-### Groq (cloud)
-```bash
-export API_BASE_URL=https://api.groq.com/openai/v1
-export MODEL_NAME=llama-3.3-70b-versatile
-export HF_TOKEN=gsk_your_key_here
-python inference.py --env-url http://localhost:7860 --episodes 3 --steps 5 --seed 42
-```
-
-### Ollama (local)
-```bash
-ollama pull qwen2.5:7b
-export API_BASE_URL=http://localhost:11434/v1
-export MODEL_NAME=qwen2.5:7b
-export HF_TOKEN=ollama  # Any non-empty value triggers LLM mode
-python inference.py --env-url http://localhost:7860 --episodes 3 --steps 5 --seed 42
-```
-
-## Critical Dependencies
-
-- **NumPy must be <2.0.0** — Pre-compiled packages (sentence-transformers, bert-score) crash with NumPy 2.x. Pinned in requirements.
-- **Protobuf required** — BERTScore dependency; explicitly listed in requirements.
-
 ## Architecture
 
-```
-server/
-├── app.py           # FastAPI endpoints
-├── environment.py   # HallucinationEnvironment class (OpenEnv step/reset/state)
-├── grader.py        # 9-component reward calculation + refusal handling + explanations
-├── dataset_loader.py # Loads 38 datasets from HF cache
-└── tasks.py         # Task registry with difficulty-weighted graders
+OpenEnv RL environment for training LLMs to avoid hallucinations. FastAPI server on HuggingFace Spaces with 3 graded tasks and a 9-component reward system.
 
-models.py            # Pydantic models: HallucinationAction, HallucinationObservation, HallucinationState
-inference.py         # Hackathon submission script (OpenAI-compatible client)
-```
+**Data flow:** `POST /reset` → sample question from dataset → `POST /step(answer)` → grade via 9-component grader → `POST /grader` → 0.0–1.0 per episode
 
-### Data Flow
+### Core Modules
 
-1. **reset()** → Samples question from dataset_loader, returns HallucinationObservation
-2. **step(HallucinationAction)** → Grades answer via grader.py, returns reward + feedback
-3. **grader.calculate_reward()** → 9 components (see Reward System below)
-4. **tasks.compute_task_score()** → Aggregates per-step rewards into 0.0-1.0 task score
+| Module | Role |
+|--------|------|
+| `server/app.py` | FastAPI endpoints, session management, inline Gradio-style HTML docs |
+| `server/environment.py` | `HallucinationEnvironment` — reset/step/state, curriculum, early stopping |
+| `server/grader.py` | `calculate_reward()` — 9 components, hallucination detection, refusal handling |
+| `server/dataset_loader.py` | Loads 38 datasets from `SamSankar/hallucination-guard-cache` HF Dataset repo |
+| `server/tasks.py` | 3 `TaskDefinition` objects + `compute_task_score()` per-episode grader |
+| `models.py` | Pydantic models inheriting from `openenv.core.env_server` base classes |
+| `inference.py` | Hackathon submission script with `[START]/[STEP]/[END]` log format |
 
-### API Endpoints
+### Session Isolation
 
-| Category | Method | Endpoint | Description |
-|----------|--------|----------|-------------|
-| Environment | POST | `/reset` | Start new episode |
-| Environment | POST | `/step` | Submit answer |
-| Environment | GET | `/state` | Get episode state |
-| Batch | POST | `/batch/evaluate` | Evaluate multiple Q&A pairs |
-| Batch | POST | `/batch/stream` | Streaming batch (NDJSON) |
-| Metrics | GET | `/metrics/timing` | Time-per-step latency stats |
-| Leaderboard | GET | `/leaderboard/viz` | Chart data (bar, scatter, tiers) |
-| OpenEnv | GET | `/tasks` | List tasks + action schema |
-| OpenEnv | POST | `/grader` | Score completed episode |
-| OpenEnv | POST | `/baseline` | Run heuristic baseline |
+`/reset` creates a per-session `HallucinationEnvironment` that shares the global dataset loader (expensive) but has its own episode state. Sessions tracked by `episode_id`/`session_id` in `_sessions` dict. `/step` looks up the session — **must pass `session_id`** or it falls back to a shared default env that may be in stale state. The `EnvClient` in `inference.py` stores `_session_id` from reset and passes it on step.
+
+### Reward System (grader.py)
+
+`calculate_reward()` returns `(reward: float, info: dict)`. 9 components with weights:
+
+| Component | Weight | Implementation |
+|-----------|--------|---------------|
+| factual_correctness | 0.35 | `check_factual_accuracy_advanced()` — exact/fuzzy/semantic match |
+| source_grounding | 0.20 | `check_quote_in_context_advanced()` — reduced for wrong answers |
+| citation_accuracy | 0.10 | Verbatim quote match in context |
+| confidence_calibration | 0.10 | `compute_calibration_error()` — overconfidence penalized more |
+| semantic_consistency | 0.10 | NLI entailment (DeBERTa-v3 CrossEncoder) |
+| hallucination_penalty | 0.10 | `detect_hallucination_advanced()` — type + severity classification |
+| rouge_score | 0.02 | ROUGE-1/2/L |
+| bertscore | 0.02 | Uses `roberta-base` |
+| alignscore | 0.01 | NLI CrossEncoder-based alignment (no separate model — reuses `_get_nli()`) |
+
+**Key grader behavior:**
+- Wrong answers capped at ~0.4 regardless of grounding (`factual_cap`)
+- Refusal on unanswerable questions: rewarded 0.65–0.80
+- Refusal when answer exists: penalized to 0.30
+- Numerical fabrication checked on original text (before `normalize_text` replaces numbers with `NUM`)
+- Thinking traces (Nemotron `◸`, `<reasoning>`) stripped via `_strip_thinking()` before grading
+
+### ML Model Loading (lazy singletons)
+
+All ML models load on first use via module-level globals in `grader.py`:
+- `_get_embedder()` → `all-MiniLM-L6-v2` (sentence-transformers)
+- `_get_nli()` → `cross-encoder/nli-deberta-v3-small` (also used by `compute_alignscore`)
+- `_get_rouge()` → `rouge_score.rouge_scorer.RougeScorer`
+- `_check_bertscore()` → `bert_score` package with `roberta-base`
+
+`app.py` lifespan preloads these in a background thread so first request isn't slow. Dockerfile pre-caches them at build time.
+
+### Task Scoring (tasks.py)
+
+`compute_task_score()` aggregates per-step rewards into 0.0–1.0:
+- Base = mean step reward - hallucination penalty
+- Completion bonus (+0.02) for episodes with ≥5 steps
+- Task-3 overconfidence penalty: `max(0, avg_calibration - 0.7) * avg_hallucination * 0.1`
 
 ### Dataset Loading
 
-Datasets load from `SamSankar/hallucination-guard-cache` HF Dataset repo. Core datasets load synchronously on startup; extended datasets load in background thread. Cached locally at `/tmp/halluguard_cache/`.
-
-### Model Preloading
-
-ML models (sentence-transformers, CrossEncoder/NLI, ROUGE, BERTScore) preload at server startup in `lifespan()` to avoid 30-60s cold start delays. Environment variable `HF_HOME=/tmp/hf_cache` replaces deprecated `TRANSFORMERS_CACHE`.
-
-## Reward System (grader.py)
-
-9-component reward system:
-
-| Component | Weight | Description |
-|-----------|--------|-------------|
-| factual_correctness | 0.35 | Exact/fuzzy match + semantic similarity to ground truth |
-| source_grounding | 0.20 | Answer supported by context (reduced for wrong answers) |
-| citation_accuracy | 0.10 | source_quote found verbatim in context |
-| confidence_calibration | 0.10 | ECE between stated confidence and correctness |
-| semantic_consistency | 0.10 | NLI entailment score (DeBERTa-v3) |
-| hallucination_penalty | 0.10 | Penalizes detected hallucinations |
-| rouge_score | 0.02 | ROUGE-1/2/L overlap with reference |
-| bertscore | 0.02 | Token-level semantic similarity |
-| alignscore | 0.01 | Faithfulness to context (RoBERTa) |
-
-**Key behavior:**
-- Wrong answers capped at ~0.4 reward regardless of grounding
-- Grounding contribution reduced for incorrect answers
-- Difficulty multiplier: beginner×0.9, intermediate×1.0, advanced×1.1, expert×1.2
-
-## Refusal Handling
-
-The grader detects when models appropriately refuse to answer unanswerable questions:
-
-| Scenario | Reward | Behavior |
-|----------|--------|----------|
-| Proper refusal on unanswerable | 0.65–0.80 | Rewarded for honesty |
-| Refusal with low confidence | 0.50 | Partial credit |
-| Underconfident refusal (answer exists) | 0.30 | Penalized for not trying |
-
-Detected phrases: "I cannot answer", "not in the context", "I don't know", "cannot determine", "insufficient information". See `is_refusal_answer()` in grader.py.
+Core datasets (squad, halueval, boolq, openbookqa, sciq) load synchronously at startup. Extended datasets download in a background thread from `SamSankar/hallucination-guard-cache` on HF Hub. Cache at `/tmp/halluguard_cache/`.
 
 ## Pydantic Models
 
-All models inherit from `openenv.core.env_server.Action`, `Observation`, `State` (Pydantic BaseModel, not dataclass). When modifying:
-- Use `Field(default_factory=...)` not `field(default_factory=...)`
-- Use `str` for enum values in model fields (e.g., `difficulty: str = "intermediate"`)
-- Serialization uses `_safe_dict()` in app.py which handles Pydantic models via `model_dump()`
+All inherit from `openenv.core.env_server` (`Action`, `Observation`, `State`). Use `Field(default_factory=...)` not `field(default_factory=...)`. Use `str` for enum values in model fields.
 
-## Test Structure
+Serialization uses `_safe_dict()` in app.py which handles Pydantic models, dataclasses, and enums recursively.
 
+## Hackathon Log Format (inference.py)
+
+`inference.py` emits structured logs required by the hackathon evaluator:
 ```
-tests/
-├── test_grader.py        # 20 tests: reward calculation, refusal handling, hallucination detection
-├── test_adversarial.py   # 18 tests: HaluEval, TruthfulQA edge cases
-├── test_endpoints.py     # 15 tests: batch eval, metrics, leaderboard endpoints
-├── test_environment.py   # 13 tests: reset/step behavior
-└── test_dataset_loader.py # 14 tests: dataset loading, caching
+[START] task=<task_name> env=hallucination-guard-env model=<model_name>
+[STEP] step=<n> action=<action_str> reward=<0.00> done=<true|false> error=<msg|null>
+[END] success=<true|false> steps=<n> score=<score> rewards=<r1,r2,...,rn>
 ```
 
-Run with `pytest tests/ -v`. CI runs automatically via `.github/workflows/test.yml`.
+## Critical Constraints
+
+- **NumPy <2.0.0** — Pre-compiled packages crash with NumPy 2.x
+- **BERTScore model** — Must use `roberta-base`, NOT `microsoft/deberta-v3-base` (fast tokenizer crashes with transformers>=4.57 due to `vocab_file=None`)
+- **AlignScore** — Replaced with NLI CrossEncoder-based `compute_alignscore()` (no separate package/model needed; do NOT add `alignscore` to requirements)
+- **`/metadata` must include `description`** — OpenEnv validator fails without it
+- **`/schema` must include `state`** — OpenEnv validator fails without it
+- **Port is 7860** — HF Spaces config, Dockerfile, and client.py all use this
+- **session_id** — `inference.py` and `client.py` must pass `session_id` from `/reset` to `/step` or episodes end after 1 step
 
 ## Repositories
 
 - **GitHub:** https://github.com/SS-360/hallucination-guard-env
 - **HuggingFace Space:** https://huggingface.co/spaces/SamSankar/hallucination-guard-env
-
-Changes pushed to GitHub automatically sync to HuggingFace Spaces via `.github/workflows/sync-to-hf.yml`. Requires `HF_TOKEN` secret with write permissions in GitHub repo settings.
-
-## Baseline Scores
-
-Heuristic agent (seed=42, 3 episodes × 5 steps):
-- task_1_factual_grounding: 0.29 (±0.15)
-- task_2_multi_hop_synthesis: 0.25 (±0.14)
-- task_3_adversarial_resistance: 0.22 (±0.16)
-- Overall: 0.25

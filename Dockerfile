@@ -40,7 +40,6 @@ CMD curl -f http://localhost:7860/health || exit 1
 ENV PYTHONUNBUFFERED=1
 ENV HF_HOME=/tmp/hf_cache
 ENV HF_HUB_CACHE=/tmp/hf_cache
-ENV TRANSFORMERS_CACHE=/tmp/transformers_cache
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # PRELOAD MODELS AT BUILD TIME — eliminates cold-start latency
@@ -56,11 +55,13 @@ CrossEncoder('cross-encoder/nli-deberta-v3-small'); \
 print('Models cached successfully!'); \
 "
 
-# Preload BERTScore model (DeBERTa-v3-base)
+# Preload BERTScore model (roberta-base)
+# Note: deberta-v3-base crashes with transformers>=4.57 due to tokenizer bug,
+# so we use roberta-base which is compatible with all transformers versions.
 RUN python -c "\
 from bert_score import BERTScorer; \
-print('Preloading DeBERTa-v3-base for BERTScore...'); \
-scorer = BERTScorer(model_type='microsoft/deberta-v3-base', lang='en', device='cpu'); \
+print('Preloading roberta-base for BERTScore...'); \
+scorer = BERTScorer(model_type='roberta-base', lang='en', device='cpu'); \
 print('BERTScore model cached!'); \
 " 2>/dev/null || echo "BERTScore preload completed (some warnings are expected)"
 
