@@ -1287,15 +1287,27 @@ async def run_baseline(body: Dict[str, Any] = {}):
             obs_meta = obs_dict.get("metadata", {})
             if isinstance(obs_meta, dict):
                 obs_correctness = obs_meta.get("correctness", 0.0)
+                obs_calibration = obs_meta.get("calibration", 0.6)
+                rb = obs_meta.get("reward_breakdown", {})
+                infos.append({
+                    "correctness": obs_correctness,
+                    "grounding": obs_dict.get("grounding_score", 0),
+                    "calibration": obs_calibration,
+                    "hallucination_score": 1.0 if obs_dict.get("is_hallucination") else 0.0,
+                    "is_hallucination": bool(obs_dict.get("is_hallucination", False)),
+                    "semantic_consistency": rb.get("semantic_consistency", 0.0),
+                    "rouge_l": rb.get("rouge_l", 0.0),
+                    "bert_score": rb.get("bert_score", 0.0),
+                    "align_score": rb.get("align_score", 0.0),
+                })
             else:
-                obs_correctness = 0.0
-            infos.append({
-                "correctness": obs_correctness,
-                "grounding": obs_dict.get("grounding_score", 0),
-                "calibration": 0.6,
-                "hallucination_score": 1.0 if obs_dict.get("is_hallucination") else 0.0,
-                "is_hallucination": bool(obs_dict.get("is_hallucination", False)),
-            })
+                infos.append({
+                    "correctness": 0.0,
+                    "grounding": obs_dict.get("grounding_score", 0),
+                    "calibration": 0.6,
+                    "hallucination_score": 1.0 if obs_dict.get("is_hallucination") else 0.0,
+                    "is_hallucination": bool(obs_dict.get("is_hallucination", False)),
+                })
         results.append(compute_task_score(task, rewards, infos))
         try: env.close()
         except: pass

@@ -1327,13 +1327,13 @@ def calculate_reward(
         "difficulty_multiplier": difficulty_multiplier,
         "consistency_bonus": consistency_bonus,
 
-        # Component contributions
+        # Component contributions (matching actual reward calculation)
         "components": {
             "correctness_contrib": reward_weights["factual_correctness"] * correctness,
-            "grounding_contrib": reward_weights["source_grounding"] * grounding_score,
-            "citation_contrib": reward_weights["citation_accuracy"] * citation_analysis.get("best_match_score", 0.0),
+            "grounding_contrib": reward_weights["source_grounding"] * effective_grounding,
+            "citation_contrib": reward_weights["citation_accuracy"] * min(citation_analysis.get("best_match_score", 0.0), factual_cap),
             "calibration_contrib": reward_weights["confidence_calibration"] * calibration_score,
-            "semantic_contrib": reward_weights["semantic_consistency"] * semantic_score,
+            "semantic_contrib": reward_weights["semantic_consistency"] * min(semantic_score, factual_cap),
             "hallucination_contrib": reward_weights["hallucination_penalty"] * hallucination_penalty_score,
         },
 
@@ -1343,10 +1343,10 @@ def calculate_reward(
         "bertscore": bs_scores,
         "alignscore": align_score,
 
-        # Component contributions
-        "rouge_contrib":      reward_weights.get("rouge_score", 0.05) * rouge_combined,
-        "bertscore_contrib":  reward_weights.get("bertscore",   0.05) * bertscore_f1,
-        "alignscore_contrib": reward_weights.get("alignscore",  0.05) * align_score,
+        # Component contributions (matching actual reward calculation with factual_cap)
+        "rouge_contrib":      reward_weights.get("rouge_score", 0.02) * min(rouge_combined, factual_cap),
+        "bertscore_contrib":  reward_weights.get("bertscore",   0.02) * min(bertscore_f1, factual_cap),
+        "alignscore_contrib": reward_weights.get("alignscore",  0.01) * min(align_score, factual_cap),
 
         # Detailed analyses
         "correctness_analysis": correctness_analysis,
