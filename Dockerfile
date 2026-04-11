@@ -40,7 +40,6 @@ CMD curl -f http://localhost:7860/health || exit 1
 ENV PYTHONUNBUFFERED=1
 ENV HF_HOME=/tmp/hf_cache
 ENV HF_HUB_CACHE=/tmp/hf_cache
-ENV TRANSFORMERS_CACHE=/tmp/transformers_cache
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # PRELOAD MODELS AT BUILD TIME — eliminates cold-start latency
