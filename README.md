@@ -311,6 +311,20 @@ Datasets load from `SamSankar/hallucination-guard-cache` on HF Hub. Core 5 datas
 
 ## 📋 Baseline Scores
 
+All benchmarks: **3 episodes × 5 steps, seed=42**, against deployed HF Space.
+
+### Full Benchmark Results
+
+| # | Model | Provider | Overall | Task 1 | Task 2 | Task 3 | Time |
+|---|-------|----------|---------|--------|--------|--------|------|
+| 1 | Nemotron-3-Super 120B | OpenRouter | **0.553** | 0.599 | 0.535 | 0.524 | 10m 57s |
+| 2 | Llama 3.3 70B | Groq | **0.514** | 0.542 | 0.449 | 0.552 | 1m 12s |
+| 3 | Qwen3 32B | Groq | **0.513** | 0.564 | 0.453 | 0.522 | 4m 41s |
+| 4 | GPT-OSS 20B | Groq | **0.498** | 0.552 | 0.406 | 0.537 | 3m 53s |
+| 5 | Qwen2.5 72B Instruct | HF Router | **0.480** | 0.594 | 0.431 | 0.417 | 3m 05s |
+| 6 | GLM-4.5 Air | OpenRouter | **0.350** | 0.436 | 0.311 | 0.303 | 14m 01s |
+| 7 | Heuristic (no LLM) | — | **0.131** | 0.162 | 0.144 | 0.087 | 30s |
+
 ### Heuristic Baseline (no LLM required)
 
 The heuristic baseline is a deterministic agent that extracts the first sentence of the context as the answer. It establishes a performance floor — any real LLM should beat this.
@@ -319,24 +333,27 @@ The heuristic baseline is a deterministic agent that extracts the first sentence
 python inference.py --heuristic --env-url http://localhost:7860 --episodes 3 --steps 5 --seed 42
 ```
 
-**Expected scores:**
+### Run LLM Baselines
 
-| Task | Mean Score |
-|------|------------|
-| task_1_factual_grounding | ~0.18 |
-| task_2_multi_hop_synthesis | ~0.07 |
-| task_3_adversarial_resistance | ~0.09 |
-| **Overall** | **~0.11** |
+```bash
+# Groq (fast inference)
+export API_BASE_URL=https://api.groq.com/openai/v1
+export MODEL_NAME=llama-3.3-70b-versatile
+export HF_TOKEN=gsk_your_key
+python inference.py --env-url https://samsankar-hallucination-guard-env.hf.space --episodes 3 --steps 5
 
-### LLM Baselines
+# HF Router (open models)
+export API_BASE_URL=https://router.huggingface.co/v1
+export MODEL_NAME=Qwen/Qwen2.5-72B-Instruct
+export HF_TOKEN=hf_your_token
+python inference.py --env-url https://samsankar-hallucination-guard-env.hf.space --episodes 3 --steps 5
 
-All tested with **3 episodes × 5 steps, seed=42, local server**:
-
-| Model | Provider | Overall | Task 1 | Task 2 | Task 3 |
-|-------|----------|---------|--------|--------|--------|
-| qwen/qwen3-32b | Groq | **0.51** | 0.56 | 0.48 | 0.47 |
-| Llama 3.3 70B | Groq | **0.45** | 0.52 | 0.43 | 0.41 |
-| Llama 3.1 8B | Groq | **0.42** | 0.48 | 0.40 | 0.38 |
+# OpenRouter (free-tier models)
+export API_BASE_URL=https://openrouter.ai/api/v1
+export MODEL_NAME=nvidia/nemotron-3-super-120b-a12b:free
+export HF_TOKEN=sk-or-v1-your_key
+python inference.py --env-url https://samsankar-hallucination-guard-env.hf.space --episodes 3 --steps 5
+```
 
 ---
 
