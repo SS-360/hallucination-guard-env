@@ -258,7 +258,7 @@ def compute_alignscore(context: str, answer: str) -> float:
         return 0.5
     try:
         # NLI labels: [contradiction, entailment, neutral]
-        scores = nli.predict([(context, answer)])
+        scores = nli.predict([(context, answer)], apply_softmax=True)
         if hasattr(scores, 'tolist'):
             scores = scores.tolist()
         if isinstance(scores, list) and len(scores) > 0:
@@ -606,16 +606,19 @@ def check_quote_in_context_advanced(source_quote: str, context: str) -> Tuple[fl
 
     # Try matching key phrases (relaxed matching)
     quote_key_phrases = [p for p in normalized_quote.split() if len(p) > 3]
-    context_set = set(normalized_context.split())
+    # Strip trailing periods from context words for matching (normalize_text preserves periods)
+    context_set = set(w.rstrip('.') for w in normalized_context.split())
 
     if quote_key_phrases:
         phrase_match_ratio = sum(1 for p in quote_key_phrases if p in context_set) / len(quote_key_phrases)
         if phrase_match_ratio > 0.5:
+            score = 0.5 + 0.3 * phrase_match_ratio
+            analysis["best_match_score"] = score
             analysis["partial_matches"].append({
                 "type": "key_phrase_match",
                 "ratio": phrase_match_ratio
             })
-            return 0.5 + 0.3 * phrase_match_ratio, analysis
+            return score, analysis
 
     return 0.0, analysis
 
@@ -1010,8 +1013,23 @@ def compute_semantic_consistency(answer: str, context: str, ground_truth: str) -
             analysis["contradiction_detected"] = (ctx_contra > 0.5) or (truth_contra > 0.5)
             analysis["nli_used"] = True
 
-            # Consistency = average entailment, penalised by contradiction
-            consistency_score = (ctx_entail * 0.5 + truth_entail * 0.5)
+            # Consistency = weighted entailment, penalised by contradiction
+            # Short answers (<=10 words) get low context-entailment from NLI models
+            # because a paragraph doesn't naturally "entail" a single word.
+            # Weight truth-entailment more for short answers to compensate.
+            answer_word_count = len(answer.split())
+            if answer_word_count <= 5:
+                # Short answer: trust truth-entailment primarily
+                truth_weight = 0.8
+                ctx_weight = 0.2
+            elif answer_word_count <= 15:
+                truth_weight = 0.6
+                ctx_weight = 0.4
+            else:
+                truth_weight = 0.5
+                ctx_weight = 0.5
+
+            consistency_score = (ctx_entail * ctx_weight + truth_entail * truth_weight)
             if analysis["contradiction_detected"]:
                 consistency_score *= max(0.1, 1.0 - max(ctx_contra, truth_contra))
 
