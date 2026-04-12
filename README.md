@@ -23,7 +23,7 @@ tags:
 
 > **The production-grade OpenEnv RL environment for training and evaluating LLMs on hallucination avoidance.**
 
-**Server Version:** v4.2.0
+**Server Version:** v4.2.1
 
 [![OpenEnv](https://img.shields.io/badge/OpenEnv-Compatible-blue)](https://github.com/meta-pytorch/OpenEnv)
 [![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-blue)](#-quick-start)
@@ -319,11 +319,14 @@ All benchmarks: **3 episodes × 5 steps, seed=42**, against deployed HF Space.
 |---|-------|----------|---------|--------|--------|--------|------|
 | 1 | Nemotron-3-Super 120B | OpenRouter | **0.553** | 0.599 | 0.535 | 0.524 | 10m 57s |
 | 2 | Llama 3.3 70B | Groq | **0.514** | 0.542 | 0.449 | 0.552 | 1m 12s |
-| 3 | Qwen3 32B | Groq | **0.513** | 0.564 | 0.453 | 0.522 | 4m 41s |
-| 4 | GPT-OSS 20B | Groq | **0.498** | 0.552 | 0.406 | 0.537 | 3m 53s |
-| 5 | Qwen2.5 72B Instruct | HF Router | **0.480** | 0.594 | 0.431 | 0.417 | 3m 05s |
-| 6 | GLM-4.5 Air | OpenRouter | **0.350** | 0.436 | 0.311 | 0.303 | 14m 01s |
-| 7 | Heuristic (no LLM) | — | **0.131** | 0.162 | 0.144 | 0.087 | 30s |
+| 3 | Llama 4 Scout 17B | Groq | **0.508** | 0.558 | 0.453 | 0.513 | 1m 14s |
+| 4 | Qwen3 32B | Groq | **0.513** | 0.564 | 0.453 | 0.522 | 4m 41s |
+| 5 | GPT-OSS 20B | Groq | **0.498** | 0.552 | 0.406 | 0.537 | 3m 53s |
+| 6 | Kimi K2 Instruct | Groq | **0.486** | 0.494 | 0.447 | 0.516 | 1m 14s |
+| 7 | Qwen2.5 72B Instruct | HF Router | **0.480** | 0.594 | 0.431 | 0.417 | 3m 05s |
+| 8 | Gemma 4 31B Cloud | Ollama | **0.421** | 0.498 | 0.286 | 0.480 | 3m 18s |
+| 9 | GLM-4.5 Air | OpenRouter | **0.350** | 0.436 | 0.311 | 0.303 | 14m 01s |
+| 10 | Heuristic (no LLM) | — | **0.131** | 0.162 | 0.144 | 0.087 | 30s |
 
 ### Heuristic Baseline (no LLM required)
 
@@ -458,6 +461,16 @@ ruff check . --ignore E501,F401,F403
 ---
 
 ## Changelog
+
+### v4.2.1 (2026-04)
+
+- **Fixed** Source grounding key phrase matching — trailing periods in normalized context words (e.g., `"alaska."`) prevented matching against quote words (e.g., `"alaska"`), causing false 0.0 grounding scores for valid partial quotes. Context word set now strips periods.
+- **Fixed** AlignScore computation — `compute_alignscore()` called `nli.predict()` without `apply_softmax=True`, using raw logits instead of probabilities in the `entailment - contradiction + 0.5` formula. Short answers like single-word responses now get meaningful alignment scores instead of erratic 0.0/1.0 values.
+- **Fixed** Semantic consistency penalizing short answers — NLI models give low entailment from paragraph→single-word, so 50/50 weighting between context-entailment and truth-entailment unfairly penalized correct short answers. Added adaptive weighting: 80/20 (truth/context) for ≤5 words, 60/40 for 6-15 words, 50/50 for longer.
+- **Fixed** `best_match_score` not updated in key phrase matching path of `check_quote_in_context_advanced()` — now correctly set to `0.5 + 0.3 * ratio`.
+- **Fixed** `inference.py` JSON parsing — models wrapping responses in markdown code fences (` ```json...``` `) now correctly extracted. Rewrote agent fallback flow to try JSON format first, then no-format, with proper extraction at each stage.
+- **Fixed** `inference.py` connection reliability — added retry with exponential backoff for `ChunkedEncodingError`, `ConnectionError`, and `ReadTimeout` when communicating with HF Spaces.
+- **Added** Kimi K2 Instruct and Llama 4 Scout 17B benchmark results to leaderboard.
 
 ### v4.2.0 (2026-04)
 
