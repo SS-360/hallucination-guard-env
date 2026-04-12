@@ -504,7 +504,7 @@ input[type=range] {
 <section class="hero">
   <div class="hero-inner">
     <div class="hero-badge">OpenEnv · RL Environment</div>
-    <div class="ver-chip">v4.2.0</div>
+    <div class="ver-chip">v4.2.1</div>
     <h1>
       <span class="accent">Hallucination</span><span class="accent2">Guard</span>‑Env
     </h1>
@@ -822,7 +822,7 @@ result = requests.<span class="fn">post</span>(<span class="st">f"{BASE}/step"</
 
 <!-- ══ FOOTER ══ -->
 <footer style="text-align:center;padding:32px 40px 24px;border-top:1px solid var(--border);color:var(--muted);font-size:12px;">
-  HallucinationGuard-Env v4.2.0 &middot; OpenEnv &middot; <a href="/swagger" style="color:var(--amber);text-decoration:none">Swagger Docs</a> &middot; <a href="/redoc" style="color:var(--amber);text-decoration:none">ReDoc</a>
+  HallucinationGuard-Env v4.2.1 &middot; OpenEnv &middot; <a href="/swagger" style="color:var(--amber);text-decoration:none">Swagger Docs</a> &middot; <a href="/redoc" style="color:var(--amber);text-decoration:none">ReDoc</a>
 </footer>
 
 <script>
@@ -1148,7 +1148,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     lifespan=lifespan,
     title="HallucinationGuard-Env",
-    version="4.2.0",
+    version="4.2.1",
     docs_url="/swagger",
     redoc_url="/redoc",
 )
@@ -1340,13 +1340,13 @@ async def submit_leaderboard(data: Dict[str, Any]):
     return {"status": "submitted", "model_name": data["model_name"]}
 
 @app.get("/health", tags=["Info"])
-async def health(): return {"status": "healthy", "version": "4.2.0"}
+async def health(): return {"status": "healthy", "version": "4.2.1"}
 
 @app.get("/metadata", tags=["OpenEnv"])
 async def metadata():
     return {
         "name": "hallucination-guard-env",
-        "version": "4.2.0",
+        "version": "4.2.1",
         "license": "MIT",
         "description": (
             "An OpenEnv RL environment that trains AI models to answer questions "
@@ -1408,7 +1408,7 @@ async def datasets():
 async def mcp(body: Dict[str, Any]):
     if body.get("method") == "tools/list":
         return {"jsonrpc": "2.0", "id": body.get("id",1), "result": {"tools": [{"name": "reset", "inputSchema": {"type": "object"}}, {"name": "step", "inputSchema": {"type": "object"}}]}}
-    return {"jsonrpc": "2.0", "id": body.get("id",1), "result": {"name": "hallucination-guard-env", "version": "4.2.0"}}
+    return {"jsonrpc": "2.0", "id": body.get("id",1), "result": {"name": "hallucination-guard-env", "version": "4.2.1"}}
 
 @app.middleware("http")
 async def log_req(request, call_next):
