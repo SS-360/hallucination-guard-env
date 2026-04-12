@@ -141,15 +141,31 @@ class EnvClient:
         self.session    = requests.Session()
         self._session_id: Optional[str] = None
 
+    def _request_with_retry(self, method: str, path: str, body: Dict[str, Any] = None, retries: int = 3, backoff: float = 2.0) -> Dict[str, Any]:
+        url = f"{self.base}{path}"
+        for attempt in range(retries):
+            try:
+                if method == "GET":
+                    r = self.session.get(url, timeout=self.timeout)
+                else:
+                    r = self.session.post(url, json=body, timeout=self.timeout)
+                r.raise_for_status()
+                return r.json()
+            except (requests.exceptions.ChunkedEncodingError,
+                    requests.exceptions.ConnectionError,
+                    requests.exceptions.ReadTimeout) as e:
+                if attempt < retries - 1:
+                    wait = backoff * (attempt + 1)
+                    logger.warning(f"Request to {path} failed ({type(e).__name__}), retrying in {wait:.0f}s... ({attempt+1}/{retries})")
+                    time.sleep(wait)
+                else:
+                    raise
+
     def _get(self, path: str) -> Dict[str, Any]:
-        r = self.session.get(f"{self.base}{path}", timeout=self.timeout)
-        r.raise_for_status()
-        return r.json()
+        return self._request_with_retry("GET", path)
 
     def _post(self, path: str, body: Dict[str, Any] = {}) -> Dict[str, Any]:
-        r = self.session.post(f"{self.base}{path}", json=body, timeout=self.timeout)
-        r.raise_for_status()
-        return r.json()
+        return self._request_with_retry("POST", path, body)
 
     def health(self) -> Dict[str, Any]:
         return self._get("/health")
@@ -223,65 +239,78 @@ def openai_agent(model: str, base_url: str, api_key: str) -> Callable:
             question=question,
         )
 
-        # First try with JSON response format
-        try:
-            resp = client.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user",   "content": prompt},
-                ],
-                temperature=0.0,
-                max_tokens=512,  # Increased from 256 to allow complete JSON
-                response_format={"type": "json_object"},
-            )
-            raw = resp.choices[0].message.content or "{}"
-            parsed = json.loads(raw)
-            return {
-                "answer":       str(parsed.get("answer", "")),
-                "confidence":   float(parsed.get("confidence", 0.5)),
-                "source_quote": str(parsed.get("source_quote", "")),
-            }
-        except json.JSONDecodeError:
-            raw_text = resp.choices[0].message.content or ""
-            return {"answer": raw_text[:200], "confidence": 0.4, "source_quote": ""}
-        except Exception as e:
-            # Fallback: try without response_format for models that don't support it
-            error_msg = str(e)
-            if "json_validate_failed" in error_msg or "response_format" in error_msg.lower():
-                logger.warning(f"JSON format failed, trying without response_format: {e}")
+        # Try with JSON response format first, fall back to no format
+        for use_json_format in [True, False]:
+            try:
+                kwargs = dict(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "user",   "content": prompt},
+                    ],
+                    temperature=0.0,
+                    max_tokens=512,
+                )
+                if use_json_format:
+                    kwargs["response_format"] = {"type": "json_object"}
+
+                resp = client.chat.completions.create(**kwargs)
+                raw = (resp.choices[0].message.content or "").strip()
+
+                # Strip markdown code fences if present (```json ... ```)
+                import re
+                fence_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', raw, re.DOTALL)
+                if fence_match:
+                    raw = fence_match.group(1)
+
+                # Try direct JSON parse
                 try:
-                    resp = client.chat.completions.create(
-                        model=model,
-                        messages=[
-                            {"role": "system", "content": SYSTEM_PROMPT},
-                            {"role": "user",   "content": prompt},
-                        ],
-                        temperature=0.0,
-                        max_tokens=512,
-                    )
-                    raw = resp.choices[0].message.content or "{}"
-                    # Try to extract JSON from response
-                    import re
-                    json_match = re.search(r'\{[^{}]*"answer"[^{}]*\}', raw, re.DOTALL)
-                    if json_match:
-                        try:
-                            parsed = json.loads(json_match.group(0))
-                            return {
-                                "answer": str(parsed.get("answer", "")),
-                                "confidence": float(parsed.get("confidence", 0.5)),
-                                "source_quote": str(parsed.get("source_quote", "")),
-                            }
-                        except:
-                            pass
-                    # If no valid JSON found, use raw text
-                    return {"answer": raw[:200], "confidence": 0.4, "source_quote": ""}
-                except Exception as e2:
-                    logger.warning(f"Fallback LLM call also failed: {e2}")
+                    parsed = json.loads(raw)
+                    answer = str(parsed.get("answer", ""))
+                    if answer:
+                        return {
+                            "answer":       answer,
+                            "confidence":   float(parsed.get("confidence", 0.5)),
+                            "source_quote": str(parsed.get("source_quote", "")),
+                        }
+                except json.JSONDecodeError:
+                    pass
+
+                # Try to extract JSON object from mixed text
+                json_match = re.search(r'\{[^{}]*"answer"[^{}]*\}', raw, re.DOTALL)
+                if json_match:
+                    try:
+                        parsed = json.loads(json_match.group(0))
+                        return {
+                            "answer": str(parsed.get("answer", "")),
+                            "confidence": float(parsed.get("confidence", 0.5)),
+                            "source_quote": str(parsed.get("source_quote", "")),
+                        }
+                    except json.JSONDecodeError:
+                        pass
+
+                # If JSON format was tried and failed, fall through to no-format attempt
+                if use_json_format:
+                    logger.warning("JSON parse failed, trying without response_format")
+                    continue
+
+                # Last resort: use raw text as answer
+                return {"answer": raw[:200], "confidence": 0.4, "source_quote": ""}
+
+            except Exception as e:
+                if use_json_format:
+                    error_msg = str(e)
+                    if "response_format" in error_msg.lower() or "json_validate_failed" in error_msg:
+                        logger.warning(f"JSON format not supported, trying without: {e}")
+                        continue
+                    else:
+                        logger.warning(f"LLM call failed: {e}")
+                        return {"answer": "", "confidence": 0.0, "source_quote": ""}
+                else:
+                    logger.warning(f"LLM call failed: {e}")
                     return {"answer": "", "confidence": 0.0, "source_quote": ""}
-            else:
-                logger.warning(f"LLM call failed: {e}")
-                return {"answer": "", "confidence": 0.0, "source_quote": ""}
+
+        return {"answer": "", "confidence": 0.0, "source_quote": ""}
 
     return _call
 
